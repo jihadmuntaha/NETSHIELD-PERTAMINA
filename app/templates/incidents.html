@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}Incident Logs &amp; Alert Management{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+        <h2 class="text-2xl font-bold text-white tracking-wide flex items-center gap-3">
+            <i class="fa-solid fa-triangle-exclamation text-red-500"></i>
+            <span>Incident Logs &amp; Claim ACK Panel</span>
+        </h2>
+        <p class="text-sm text-slate-400">Pengelolaan Laporan Gangguan &amp; Klaim Tindak Lanjut Perbaikan (ACK) Pertamina NetShield</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <a href="/api/incidents/export-csv" class="px-4 py-2 text-sm font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30 transition flex items-center gap-2">
+            <i class="fa-solid fa-file-csv"></i>
+            <span>Export CSV Report</span>
+        </a>
+    </div>
+</div>
+
+<!-- INCIDENTS TABLE CARD -->
+<div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-5">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div>
+            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-clock-rotate-left text-blue-400"></i>
+                <span>Daftar Log Kejadian Gangguan</span>
+            </h3>
+            <p class="text-xs text-slate-400">Total Laporan: <span class="font-bold text-slate-200">{{ incidents|length }}</span> Insiden</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <select id="filter-status" onchange="filterIncidentsTable()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                <option value="ALL">Semua Status</option>
+                <option value="NEW">🚨 NEW (Unclaimed)</option>
+                <option value="ACKNOWLEDGED">✍️ ACKNOWLEDGED</option>
+                <option value="RESOLVED">✅ RESOLVED</option>
+            </select>
+            <select id="filter-severity" onchange="filterIncidentsTable()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                <option value="ALL">Semua Severity</option>
+                <option value="DISASTER">🔥 DISASTER</option>
+                <option value="HIGH">⚠️ HIGH</option>
+                <option value="WARNING">⚡ WARNING</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm text-slate-300">
+            <thead class="bg-slate-950 text-xs uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                    <th class="py-3 px-4 font-semibold">ID</th>
+                    <th class="py-3 px-4 font-semibold">Perangkat Terdampak</th>
+                    <th class="py-3 px-4 font-semibold">Severity</th>
+                    <th class="py-3 px-4 font-semibold">Waktu Kejadian</th>
+                    <th class="py-3 px-4 font-semibold">Status</th>
+                    <th class="py-3 px-4 font-semibold">Teknisi / Catatan ACK</th>
+                    <th class="py-3 px-4 font-semibold text-right">Aksi Klaim</th>
+                </tr>
+            </thead>
+            <tbody id="incidents-tbody" class="divide-y divide-slate-800/60 font-medium">
+                {% if not incidents %}
+                <tr><td colspan="7" class="py-8 text-center text-slate-500 italic">Tidak ada log insiden tercatat saat ini. Seluruh sistem beroperasi normal.</td></tr>
+                {% endif %}
+                {% for inc in incidents %}
+                <tr class="hover:bg-slate-800/40 transition inc-row" data-status="{{ inc.status }}" data-severity="{{ inc.severity }}">
+                    <td class="py-3.5 px-4 font-mono text-xs text-slate-400">#INC-{{ inc.id }}</td>
+                    <td class="py-3.5 px-4">
+                        <div class="font-bold text-white">{{ inc.service.name if inc.service else 'N/A' }}</div>
+                        <div class="text-xs text-slate-400"><code>{{ inc.service.ip_address if inc.service else '-' }}</code></div>
+                    </td>
+                    <td class="py-3.5 px-4">
+                        {% if inc.severity == 'DISASTER' %}
+                        <span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🔥 DISASTER</span>
+                        {% elif inc.severity == 'HIGH' %}
+                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚠️ HIGH</span>
+                        {% else %}
+                        <span class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">⚡ WARNING</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-3.5 px-4 text-xs text-slate-400 font-mono">{{ inc.created_at.strftime('%Y-%m-%d %H:%M:%S') if inc.created_at else '-' }}</td>
+                    <td class="py-3.5 px-4">
+                        {% if inc.status == 'NEW' %}
+                        <span class="px-2.5 py-1 text-xs font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">NEW</span>
+                        {% elif inc.status == 'ACKNOWLEDGED' %}
+                        <span class="px-2.5 py-1 text-xs font-bold rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">ACKNOWLEDGED</span>
+                        {% else %}
+                        <span class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">RESOLVED</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-3.5 px-4 text-xs">
+                        {% if inc.ack_by %}
+                        <div class="font-bold text-slate-200"><i class="fa-solid fa-user-check text-blue-400 mr-1"></i>{{ inc.ack_by }}</div>
+                        <div class="text-slate-400 italic truncate max-w-[220px]">{{ inc.ack_message or '-' }}</div>
+                        {% else %}
+                        <span class="text-slate-500 italic">Belum ditangani</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-3.5 px-4 text-right">
+                        {% if inc.status == 'NEW' %}
+                        {% set inc_srv_name = inc.service.name if inc.service else "Node" %}
+                        <button data-inc-id="{{ inc.id }}" data-srv-name="{{ inc_srv_name }}" onclick="openAckModal(this.getAttribute('data-inc-id'), this.getAttribute('data-srv-name'))" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/30 transition">
+                            <i class="fa-solid fa-hand-holding-hand mr-1"></i>Claim ACK
+                        </button>
+                        {% else %}
+                        <span class="text-xs text-slate-500 font-semibold"><i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i>Claimed</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- MODAL: PROBLEM ACKNOWLEDGMENT (ACK) -->
+<div id="ack-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center hidden">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-user-gear text-blue-400"></i>
+                <span>Claim Incident Acknowledgment</span>
+            </h3>
+            <button onclick="closeAckModal()" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-xmark text-lg"></i></button>
+        </div>
+        <form id="ack-form" onsubmit="submitAckForm(event)" class="space-y-4">
+            <input type="hidden" id="modal-incident-id" value="">
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Perangkat Terdampak</label>
+                <input type="text" id="modal-service-name" disabled class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 font-bold">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Nama Teknisi / ACK By <span class="text-red-500">*</span></label>
+                <input type="text" id="ack-by-input" required placeholder="Contoh: Budi (IT Support FT Pengapon)" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Catatan Penanganan (ACK Message)</label>
+                <textarea id="ack-msg-input" rows="3" placeholder="Catatan awal pemeriksaan atau estimasi perbaikan..." class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+            </div>
+            <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                <button type="button" onclick="closeAckModal()" class="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">Batal</button>
+                <button type="submit" class="px-4 py-2 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/30 transition">Simpan ACK</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function filterIncidentsTable() {
+        const stVal = document.getElementById('filter-status').value;
+        const sevVal = document.getElementById('filter-severity').value;
+        document.querySelectorAll('.inc-row').forEach(row => {
+            const matchStatus = (stVal === 'ALL' || row.dataset.status === stVal);
+            const matchSev = (sevVal === 'ALL' || row.dataset.severity === sevVal);
+            row.style.display = (matchStatus && matchSev) ? '' : 'none';
+        });
+    }
+
+    function openAckModal(incidentId, serviceName) {
+        document.getElementById('modal-incident-id').value = incidentId;
+        document.getElementById('modal-service-name').value = serviceName;
+        document.getElementById('ack-by-input').value = '';
+        document.getElementById('ack-msg-input').value = '';
+        document.getElementById('ack-modal').classList.remove('hidden');
+    }
+
+    function closeAckModal() {
+        document.getElementById('ack-modal').classList.add('hidden');
+    }
+
+    async function submitAckForm(event) {
+        event.preventDefault();
+        const incidentId = document.getElementById('modal-incident-id').value;
+        const ackBy = document.getElementById('ack-by-input').value.trim();
+        const ackMsg = document.getElementById('ack-msg-input').value.trim();
+        if (!ackBy) { alert('Nama Teknisi wajib diisi!'); return; }
+        try {
+            const res = await fetch(`/api/incidents/${incidentId}/ack`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ack_by: ackBy, ack_message: ackMsg })
+            });
+            if (res.ok) { closeAckModal(); window.location.reload(); }
+            else { const e = await res.json(); alert('Gagal ACK: ' + (e.detail || 'Kesalahan')); }
+        } catch (ex) { alert('Error: ' + ex); }
+    }
+</script>
+{% endblock %}

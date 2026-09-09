@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Pertamina NetShield{% endblock %} - FT Pengapon Pilot Project</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        pertamina: { red: '#ed1c24', blue: '#0054a6', green: '#00a859', dark: '#0f172a', card: '#1e293b', border: '#334155' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex">
+
+    <!-- =========================================================
+         SIDEBAR NAVIGATION
+    ========================================================= -->
+    <aside class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0 h-screen sticky top-0 z-40">
+        <div>
+            <!-- Brand Header -->
+            <div class="p-5 border-b border-slate-800 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-red-600 flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-red-900/50">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div>
+                    <h1 class="font-extrabold tracking-wider text-base text-white leading-tight">PERTAMINA <span class="text-red-500">NETSHIELD</span></h1>
+                    <p class="text-xs text-slate-400 font-medium">FT Pengapon Pilot Project</p>
+                </div>
+            </div>
+
+            <!-- Nav Links -->
+            <nav class="p-4 space-y-1.5">
+                <!-- 1. NOC Dashboard -->
+                <a href="/noc" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'noc' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
+                    <i class="fa-solid fa-desktop w-5 text-center {% if active_page == 'noc' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
+                    <span>NOC Dashboard</span>
+                </a>
+
+                <!-- 2. Network Topology -->
+                <a href="/topology" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'topology' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
+                    <i class="fa-solid fa-sitemap w-5 text-center {% if active_page == 'topology' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
+                    <span>Network Topology</span>
+                </a>
+
+                <!-- 3. KMZ Asset Import -->
+                <a href="/import-kmz" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'import-kmz' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
+                    <i class="fa-solid fa-earth-asia w-5 text-center {% if active_page == 'import-kmz' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
+                    <span>KMZ Asset Import</span>
+                </a>
+
+                <!-- 4. Device Management -->
+                <a href="/devices" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'devices' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
+                    <i class="fa-solid fa-network-wired w-5 text-center {% if active_page == 'devices' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
+                    <span>Device Management</span>
+                </a>
+
+                <!-- 5. Incident Logs -->
+                <a href="/incidents" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'incidents' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
+                    <i class="fa-solid fa-triangle-exclamation w-5 text-center {% if active_page == 'incidents' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
+                    <span>Incident Logs</span>
+                </a>
+
+                <!-- 6. Audit & Config -->
+                <a href="/audit" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'audit' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
+                    <i class="fa-solid fa-clipboard-list w-5 text-center {% if active_page == 'audit' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
+                    <span>Audit &amp; Config</span>
+                </a>
+            </nav>
+        </div>
+
+        <!-- Footer -->
+        <div class="p-4 border-t border-slate-800 text-xs text-slate-400">
+            <div class="flex items-center gap-2 mb-1">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span class="font-semibold text-slate-200">Fuel Terminal Pengapon</span>
+            </div>
+            <p class="text-slate-500">Semarang, Jawa Tengah</p>
+        </div>
+    </aside>
+
+    <!-- =========================================================
+         MAIN CONTENT AREA
+    ========================================================= -->
+    <main class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        <!-- Top Bar -->
+        <header class="h-16 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-6 flex items-center justify-between sticky top-0 z-30">
+            <div class="flex items-center gap-3">
+                <span class="text-slate-400 text-sm">Status Monitoring:</span>
+                <span class="px-3 py-1 text-xs font-bold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                    ACTIVE POLLING (30s)
+                </span>
+            </div>
+            <div class="flex items-center gap-3">
+                <span class="text-xs text-slate-400" id="live-clock">--:--:-- WIB</span>
+                <button onclick="openAddDeviceModal()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-700 hover:bg-blue-600 text-white border border-blue-600 transition flex items-center gap-2">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>Tambah Device</span>
+                </button>
+                <a href="/api/incidents/export-csv" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-2">
+                    <i class="fa-solid fa-file-csv text-emerald-400"></i>
+                    <span>Export CSV</span>
+                </a>
+            </div>
+        </header>
+
+        <!-- Main View -->
+        <div class="p-6 space-y-6 flex-1">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <!-- =========================================================
+         MODAL: ADD DEVICE
+    ========================================================= -->
+    <!-- =========================================================
+         MODAL: ADD DEVICE & KMZ IMPORT
+    ========================================================= -->
+    <div id="modal-add-device" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center hidden">
+        <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-lg shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-circle-plus text-blue-400"></i>
+                    <span id="device-modal-title">Tambah Perangkat Baru</span>
+                </h3>
+                <button onclick="closeAddDeviceModal()" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+
+            <!-- Tab Navigation Header -->
+            <div class="flex border-b border-slate-800 text-xs font-bold gap-2" id="device-modal-tabs">
+                <button type="button" onclick="switchDeviceModalTab('manual')" id="tab-btn-manual" class="py-2 px-4 text-blue-400 border-b-2 border-blue-500 font-semibold focus:outline-none transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-keyboard"></i> Input Manual
+                </button>
+                <button type="button" onclick="switchDeviceModalTab('kmz')" id="tab-btn-kmz" class="py-2 px-4 text-slate-400 hover:text-slate-200 border-b-2 border-transparent font-semibold focus:outline-none transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-earth-asia"></i> Import KMZ File
+                </button>
+            </div>
+
+            <!-- TAB 1: MANUAL INPUT FORM -->
+            <form id="add-device-form" onsubmit="submitDeviceForm(event)" class="space-y-4">
+                <input type="hidden" id="edit-device-id" value="">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="col-span-2">
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Nama Perangkat <span class="text-red-400">*</span></label>
+                        <input id="device-name" type="text" required placeholder="Contoh: Router Gate VPN" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">IP Address (IPv4) <span class="text-red-400">*</span></label>
+                        <input id="device-ip" type="text" required pattern="^(\d{1,3}\.){3}\d{1,3}$" placeholder="Contoh: 10.4.12.1" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Area Zona <span class="text-red-400">*</span></label>
+                        <select id="device-area" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                            <option value="">-- Pilih Zona --</option>
+                            <option value="Zona 1 - Gate &amp; Main Office">Zona 1 - Gate &amp; Main Office</option>
+                            <option value="Zona 2 - Tank Farm (Tangki Timbun)">Zona 2 - Tank Farm (Tangki Timbun)</option>
+                            <option value="Zona 3 - Filling Shed (Loading Bay)">Zona 3 - Filling Shed (Loading Bay)</option>
+                            <option value="Zona 4 - IT Server Room &amp; Core Network">Zona 4 - IT Server Room &amp; Core Network</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Jenis Perangkat <span class="text-red-400">*</span></label>
+                        <select id="device-type" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                            <option value="">-- Pilih Tipe --</option>
+                            <option value="ROUTER">📶 ROUTER</option>
+                            <option value="SWITCH">🔀 SWITCH</option>
+                            <option value="CCTV">🎥 CCTV</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="device-form-error" class="hidden text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2"></div>
+                <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-800">
+                    <button type="button" onclick="closeAddDeviceModal()" class="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">Batal</button>
+                    <button type="submit" id="device-submit-btn" class="px-4 py-2 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/30 transition">
+                        <i class="fa-solid fa-floppy-disk mr-1"></i> Simpan Perangkat
+                    </button>
+                </div>
+            </form>
+
+            <!-- TAB 2: KMZ IMPORT FORM -->
+            <form id="kmz-upload-form" enctype="multipart/form-data" onsubmit="submitKmzForm(event)" class="hidden space-y-4 py-1">
+                <div class="bg-slate-950/60 border-2 border-dashed border-slate-700 hover:border-blue-500 rounded-xl p-6 text-center transition group cursor-pointer" onclick="document.getElementById('kmz-file-input').click()">
+                    <div class="w-12 h-12 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-cloud-arrow-up text-xl"></i>
+                    </div>
+                    <p class="text-xs font-semibold text-slate-200">Klik atau seret (drag &amp; drop) file .KMZ di sini</p>
+                    <p class="text-[11px] text-slate-400 mt-1">Sistem membaca file <code class="px-1.5 py-0.5 rounded bg-slate-800 text-blue-400 font-mono">doc.kml</code> &amp; mengekstrak Placemarks otomatis.</p>
+                    <input type="file" id="kmz-file-input" name="file" accept=".kmz,.kml" class="hidden" onchange="handleKmzFileSelect(this)">
+                </div>
+                <div id="kmz-file-info" class="hidden bg-slate-800/80 border border-slate-700 rounded-lg p-3 flex items-center justify-between text-xs">
+                    <div class="flex items-center gap-2 truncate">
+                        <i class="fa-solid fa-file-lines text-emerald-400"></i>
+                        <span id="kmz-filename-display" class="font-mono text-slate-200 truncate">file.kmz</span>
+                    </div>
+                    <span id="kmz-filesize-display" class="text-slate-400 shrink-0 font-mono">0 KB</span>
+                </div>
+                <div id="kmz-form-error" class="hidden text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2"></div>
+                <div id="kmz-form-success" class="hidden text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2"></div>
+                <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-800">
+                    <button type="button" onclick="closeAddDeviceModal()" class="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">Batal</button>
+                    <button type="submit" id="kmz-submit-btn" class="px-4 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30 transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-upload"></i>
+                        <span>Upload &amp; Import KMZ</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- =========================================================
+         MODAL: CONFIRM DELETE
+    ========================================================= -->
+    <div id="modal-delete-device" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center hidden">
+        <div class="bg-slate-900 border border-red-500/30 rounded-xl p-6 w-full max-w-sm shadow-2xl space-y-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+                    <i class="fa-solid fa-trash text-red-400"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-white">Hapus Perangkat?</h3>
+                    <p class="text-xs text-slate-400">Aksi ini tidak dapat dibatalkan.</p>
+                </div>
+            </div>
+            <p class="text-sm text-slate-300">Perangkat <strong id="delete-device-name" class="text-white"></strong> akan dihapus dari sistem monitoring.</p>
+            <div class="flex items-center justify-end gap-3">
+                <button onclick="closeDeleteModal()" class="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">Batal</button>
+                <button id="confirm-delete-btn" onclick="confirmDeleteDevice()" class="px-4 py-2 text-xs font-bold rounded-lg bg-red-600 hover:bg-red-700 text-white transition">
+                    <i class="fa-solid fa-trash mr-1"></i> Ya, Hapus
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================================
+         SLIDE-OVER PANEL: AUDIT LOGS
+    ========================================================= -->
+    <div id="audit-panel-backdrop" onclick="closeAuditPanel()" class="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm hidden"></div>
+    <div id="audit-panel" class="fixed top-0 right-0 z-50 h-full w-full max-w-md bg-slate-900 border-l border-slate-700 shadow-2xl flex flex-col translate-x-full transition-transform duration-300">
+        <div class="flex items-center justify-between p-5 border-b border-slate-800">
+            <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-clipboard-list text-blue-400"></i>
+                Audit Logs
+            </h3>
+            <button onclick="closeAuditPanel()" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 space-y-2" id="audit-log-list">
+            <p class="text-slate-500 text-sm text-center pt-6">Memuat log audit...</p>
+        </div>
+    </div>
+
+    <!-- =========================================================
+         BASE SCRIPTS
+    ========================================================= -->
+    <script>
+        // Live Clock WIB
+        function updateClock() {
+            const t = new Date().toLocaleTimeString('id-ID', { timeZone:'Asia/Jakarta', hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit' });
+            const el = document.getElementById('live-clock');
+            if (el) el.innerText = t + ' WIB';
+        }
+        setInterval(updateClock, 1000); updateClock();
+
+        // ---- ADD / EDIT DEVICE MODAL & KMZ IMPORT ----
+        let _pendingDeleteId = null;
+
+        function switchDeviceModalTab(tab) {
+            const btnManual = document.getElementById('tab-btn-manual');
+            const btnKmz = document.getElementById('tab-btn-kmz');
+            const formManual = document.getElementById('add-device-form');
+            const formKmz = document.getElementById('kmz-upload-form');
+            if (!btnManual || !btnKmz || !formManual || !formKmz) return;
+
+            if (tab === 'manual') {
+                btnManual.className = "py-2 px-4 text-blue-400 border-b-2 border-blue-500 font-semibold focus:outline-none transition flex items-center gap-1.5";
+                btnKmz.className = "py-2 px-4 text-slate-400 hover:text-slate-200 border-b-2 border-transparent font-semibold focus:outline-none transition flex items-center gap-1.5";
+                formManual.classList.remove('hidden');
+                formKmz.classList.add('hidden');
+            } else {
+                btnKmz.className = "py-2 px-4 text-blue-400 border-b-2 border-blue-500 font-semibold focus:outline-none transition flex items-center gap-1.5";
+                btnManual.className = "py-2 px-4 text-slate-400 hover:text-slate-200 border-b-2 border-transparent font-semibold focus:outline-none transition flex items-center gap-1.5";
+                formKmz.classList.remove('hidden');
+                formManual.classList.add('hidden');
+            }
+        }
+
+        function handleKmzFileSelect(input) {
+            const infoBox = document.getElementById('kmz-file-info');
+            const nameDisplay = document.getElementById('kmz-filename-display');
+            const sizeDisplay = document.getElementById('kmz-filesize-display');
+            if (input.files && input.files[0]) {
+                const f = input.files[0];
+                nameDisplay.innerText = f.name;
+                sizeDisplay.innerText = (f.size / 1024).toFixed(1) + ' KB';
+                infoBox.classList.remove('hidden');
+            } else {
+                infoBox.classList.add('hidden');
+            }
+        }
+
+        async function submitKmzForm(e) {
+            e.preventDefault();
+            const fileInput = document.getElementById('kmz-file-input');
+            const errEl = document.getElementById('kmz-form-error');
+            const succEl = document.getElementById('kmz-form-success');
+            const submitBtn = document.getElementById('kmz-submit-btn');
+
+            errEl.classList.add('hidden');
+            succEl.classList.add('hidden');
+
+            if (!fileInput.files || fileInput.files.length === 0) {
+                errEl.innerText = 'Silakan pilih file .kmz terlebih dahulu.';
+                errEl.classList.remove('hidden');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Memproses...';
+
+            try {
+                const res = await fetch('/api/devices/upload-kmz', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    succEl.innerText = data.message || 'Import KMZ berhasil!';
+                    succEl.classList.remove('hidden');
+                    setTimeout(() => {
+                        closeAddDeviceModal();
+                        if (typeof fetchDashboardSummary === 'function') fetchDashboardSummary();
+                    }, 1200);
+                } else {
+                    errEl.innerText = data.detail || 'Gagal mengunggah file KMZ.';
+                    errEl.classList.remove('hidden');
+                }
+            } catch (ex) {
+                errEl.innerText = 'Error koneksi: ' + ex;
+                errEl.classList.remove('hidden');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fa-solid fa-upload mr-1"></i> Upload &amp; Import KMZ';
+            }
+        }
+
+        function openAddDeviceModal(device = null) {
+            switchDeviceModalTab('manual');
+            const form = document.getElementById('add-device-form');
+            const kmzForm = document.getElementById('kmz-upload-form');
+            if (form) form.reset();
+            if (kmzForm) kmzForm.reset();
+            document.getElementById('device-form-error')?.classList.add('hidden');
+            document.getElementById('kmz-form-error')?.classList.add('hidden');
+            document.getElementById('kmz-form-success')?.classList.add('hidden');
+            document.getElementById('kmz-file-info')?.classList.add('hidden');
+            document.getElementById('edit-device-id').value = '';
+            if (device) {
+                document.getElementById('device-modal-title').innerText = 'Edit Perangkat';
+                document.getElementById('device-submit-btn').innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i> Update Perangkat';
+                document.getElementById('edit-device-id').value = device.id;
+                document.getElementById('device-name').value = device.name;
+                document.getElementById('device-ip').value = device.ip_address;
+                document.getElementById('device-area').value = device.area;
+                document.getElementById('device-type').value = device.device_type;
+            } else {
+                document.getElementById('device-modal-title').innerText = 'Tambah Perangkat Baru';
+                document.getElementById('device-submit-btn').innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i> Simpan Perangkat';
+            }
+            document.getElementById('modal-add-device').classList.remove('hidden');
+        }
+
+        function closeAddDeviceModal() {
+            document.getElementById('modal-add-device').classList.add('hidden');
+        }
+
+        async function submitDeviceForm(e) {
+            e.preventDefault();
+            const errEl = document.getElementById('device-form-error');
+            errEl.classList.add('hidden');
+            const editId = document.getElementById('edit-device-id').value;
+            const payload = {
+                name: document.getElementById('device-name').value.trim(),
+                ip_address: document.getElementById('device-ip').value.trim(),
+                area: document.getElementById('device-area').value,
+                device_type: document.getElementById('device-type').value,
+                is_maintenance: false
+            };
+            try {
+                const isEdit = !!editId;
+                const url = isEdit ? `/api/devices/${editId}` : '/api/devices';
+                const method = isEdit ? 'PUT' : 'POST';
+                const res = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+                if (res.ok) {
+                    closeAddDeviceModal();
+                    if (typeof fetchDashboardSummary === 'function') fetchDashboardSummary();
+                } else {
+                    const err = await res.json();
+                    errEl.innerText = err.detail || 'Terjadi kesalahan.';
+                    errEl.classList.remove('hidden');
+                }
+            } catch(ex) {
+                errEl.innerText = 'Error koneksi: ' + ex;
+                errEl.classList.remove('hidden');
+            }
+        }
+
+        // ---- DELETE DEVICE ----
+        function openDeleteModal(id, name) {
+            _pendingDeleteId = id;
+            document.getElementById('delete-device-name').innerText = name;
+            document.getElementById('modal-delete-device').classList.remove('hidden');
+        }
+        function closeDeleteModal() {
+            _pendingDeleteId = null;
+            document.getElementById('modal-delete-device').classList.add('hidden');
+        }
+        async function confirmDeleteDevice() {
+            if (!_pendingDeleteId) return;
+            const res = await fetch(`/api/devices/${_pendingDeleteId}`, { method:'DELETE' });
+            closeDeleteModal();
+            if (typeof fetchDashboardSummary === 'function') fetchDashboardSummary();
+        }
+
+        // ---- AUDIT LOGS SLIDE-OVER ----
+        async function openAuditPanel() {
+            document.getElementById('audit-panel-backdrop').classList.remove('hidden');
+            const panel = document.getElementById('audit-panel');
+            panel.classList.remove('translate-x-full');
+            panel.classList.add('translate-x-0');
+            const listEl = document.getElementById('audit-log-list');
+            listEl.innerHTML = '<p class="text-slate-500 text-sm text-center pt-6"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat...</p>';
+            try {
+                const res = await fetch('/api/audit-logs?limit=50');
+                if (!res.ok) throw new Error('Gagal mengambil data audit logs');
+                const logs = await res.json();
+                if (logs.length === 0) {
+                    listEl.innerHTML = '<p class="text-slate-500 text-sm text-center pt-6">Belum ada aktivitas yang tercatat.</p>';
+                    return;
+                }
+                listEl.innerHTML = logs.map(log => {
+                    const ts = log.timestamp ? log.timestamp.replace('T',' ').substring(0,19) : '-';
+                    return `<div class="bg-slate-800 rounded-lg p-3 border border-slate-700 space-y-1">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-blue-400"><i class="fa-solid fa-user-gear mr-1"></i>${log.user_name}</span>
+                            <span class="text-xs text-slate-500 font-mono">${ts}</span>
+                        </div>
+                        <p class="text-xs text-slate-300">${log.action}</p>
+                        <p class="text-xs text-slate-500">IP: ${log.ip_address}</p>
+                    </div>`;
+                }).join('');
+            } catch (ex) {
+                listEl.innerHTML = `<p class="text-red-400 text-sm text-center pt-6">Error: ${ex.message}</p>`;
+            }
+        }
+        function closeAuditPanel() {
+            document.getElementById('audit-panel-backdrop').classList.add('hidden');
+            const panel = document.getElementById('audit-panel');
+            panel.classList.remove('translate-x-0');
+            panel.classList.add('translate-x-full');
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Logs &amp; System Configuration{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+        <h2 class="text-2xl font-bold text-white tracking-wide flex items-center gap-3">
+            <i class="fa-solid fa-clipboard-list text-blue-400"></i>
+            <span>Audit Logs &amp; System Config</span>
+        </h2>
+        <p class="text-sm text-slate-400">Jejak Rekam Aktivitas Pengguna &amp; Konfigurasi Monitoring Pertamina NetShield</p>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Audit Logs Main Panel (2 cols) -->
+    <div class="lg:col-span-2 space-y-5">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-user-gear text-blue-400"></i>
+                    <span>Riwayat Audit Log Aktivitas</span>
+                </h3>
+                <span class="text-xs text-slate-400 font-mono">{{ audit_logs|length }} Log Tercatat</span>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-300">
+                    <thead class="bg-slate-950 text-xs uppercase text-slate-400 border-b border-slate-800">
+                        <tr>
+                            <th class="py-3 px-4 font-semibold">ID</th>
+                            <th class="py-3 px-4 font-semibold">Pengguna</th>
+                            <th class="py-3 px-4 font-semibold">Aksi System</th>
+                            <th class="py-3 px-4 font-semibold">Client IP</th>
+                            <th class="py-3 px-4 font-semibold">Waktu Stempel</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/60 font-medium">
+                        {% if not audit_logs %}
+                        <tr><td colspan="5" class="py-8 text-center text-slate-500 italic">Belum ada riwayat audit log tercatat.</td></tr>
+                        {% endif %}
+                        {% for log in audit_logs %}
+                        <tr class="hover:bg-slate-800/40 transition">
+                            <td class="py-3.5 px-4 font-mono text-xs text-slate-500">#{{ log.id }}</td>
+                            <td class="py-3.5 px-4 font-bold text-blue-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-user-shield text-slate-400 text-xs"></i>
+                                {{ log.user_name }}
+                            </td>
+                            <td class="py-3.5 px-4 text-xs text-slate-200">{{ log.action }}</td>
+                            <td class="py-3.5 px-4"><code class="px-2 py-0.5 rounded bg-slate-950 text-slate-400 text-xs font-mono border border-slate-800">{{ log.ip_address }}</code></td>
+                            <td class="py-3.5 px-4 text-xs font-mono text-slate-400">{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Configuration Panel (1 col) -->
+    <div class="space-y-6">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-4">
+            <h3 class="text-base font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+                <i class="fa-solid fa-sliders text-emerald-400"></i>
+                <span>Konfigurasi Monitoring System</span>
+            </h3>
+
+            <div class="space-y-3 text-xs">
+                <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 flex justify-between items-center">
+                    <span class="text-slate-400">Polling Interval:</span>
+                    <span class="font-bold text-emerald-400 font-mono">30 Detik (Active)</span>
+                </div>
+                <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 flex justify-between items-center">
+                    <span class="text-slate-400">Target Lokasi:</span>
+                    <span class="font-bold text-slate-200">FT Pengapon Semarang</span>
+                </div>
+                <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 flex justify-between items-center">
+                    <span class="text-slate-400">Total Zona Terpantau:</span>
+                    <span class="font-bold text-blue-400 font-mono">4 Area Utama</span>
+                </div>
+                <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 flex justify-between items-center">
+                    <span class="text-slate-400">Database Engine:</span>
+                    <span class="font-bold text-purple-400 font-mono">SQLite / SQLAlchemy</span>
+                </div>
+                <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 flex justify-between items-center">
+                    <span class="text-slate-400">Telegram Bot Alert:</span>
+                    <span class="font-bold text-emerald-400 font-mono">ENABLED</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

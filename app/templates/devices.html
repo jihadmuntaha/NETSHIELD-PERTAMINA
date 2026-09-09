@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Device Management Inventory{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+        <h2 class="text-2xl font-bold text-white tracking-wide flex items-center gap-3">
+            <i class="fa-solid fa-network-wired text-blue-500"></i>
+            <span>Device Inventory Management</span>
+        </h2>
+        <p class="text-sm text-slate-400">Pengelolaan Seluruh Perangkat Jaringan &amp; Kamera CCTV FT Pengapon</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <button onclick="openAddDeviceModal()" class="px-4 py-2 text-sm font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/30 transition flex items-center gap-2">
+            <i class="fa-solid fa-plus"></i>
+            <span>Tambah Perangkat Baru</span>
+        </button>
+        <a href="/import-kmz" class="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition flex items-center gap-2">
+            <i class="fa-solid fa-earth-asia text-emerald-400"></i>
+            <span>Import KMZ File</span>
+        </a>
+    </div>
+</div>
+
+<!-- INVENTORY CARD & TABLE -->
+<div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-5">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div class="relative flex-1 max-w-md">
+            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+            <input type="text" id="search-device" onkeyup="filterInventoryTable()" placeholder="Cari nama perangkat atau IP Address..." class="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+            <select id="filter-zone" onchange="filterInventoryTable()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                <option value="ALL">Semua Zona</option>
+                <option value="Zona 1 - Gate &amp; Main Office">Zona 1 - Gate &amp; Main Office</option>
+                <option value="Zona 2 - Tank Farm (Tangki Timbun)">Zona 2 - Tank Farm</option>
+                <option value="Zona 3 - Filling Shed (Loading Bay)">Zona 3 - Filling Shed</option>
+                <option value="Zona 4 - IT Server Room &amp; Core Network">Zona 4 - IT Server Room</option>
+            </select>
+            <select id="filter-type" onchange="filterInventoryTable()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                <option value="ALL">Semua Jenis</option>
+                <option value="ROUTER">📶 ROUTER</option>
+                <option value="SWITCH">🔀 SWITCH</option>
+                <option value="CCTV">🎥 CCTV</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm text-slate-300">
+            <thead class="bg-slate-950 text-xs uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                    <th class="py-3 px-4 font-semibold">ID</th>
+                    <th class="py-3 px-4 font-semibold">Nama Perangkat</th>
+                    <th class="py-3 px-4 font-semibold">IP Address</th>
+                    <th class="py-3 px-4 font-semibold">Zona Area</th>
+                    <th class="py-3 px-4 font-semibold">Jenis</th>
+                    <th class="py-3 px-4 font-semibold">Status Monitoring</th>
+                    <th class="py-3 px-4 font-semibold text-right">Aksi Manajerial</th>
+                </tr>
+            </thead>
+            <tbody id="inventory-tbody" class="divide-y divide-slate-800/60 font-medium">
+                {% for s in services %}
+                <tr class="hover:bg-slate-800/40 transition inv-row" data-name="{{ s.name|lower }}" data-ip="{{ s.ip_address }}" data-zone="{{ s.area }}" data-type="{{ s.device_type }}">
+                    <td class="py-3.5 px-4 font-mono text-xs text-slate-500">#{{ s.id }}</td>
+                    <td class="py-3.5 px-4 font-bold text-white">{{ s.name }}</td>
+                    <td class="py-3.5 px-4"><code class="px-2 py-0.5 rounded bg-slate-800 text-blue-400 text-xs border border-slate-700 font-mono">{{ s.ip_address }}</code></td>
+                    <td class="py-3.5 px-4 text-xs text-slate-400">{{ s.area }}</td>
+                    <td class="py-3.5 px-4">
+                        {% set d_type = s.device_type %}
+                        {% if d_type == 'ROUTER' %}
+                        <span class="px-2 py-0.5 text-xs font-semibold rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">📶 ROUTER</span>
+                        {% elif d_type == 'SWITCH' %}
+                        <span class="px-2 py-0.5 text-xs font-semibold rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">🔀 SWITCH</span>
+                        {% else %}
+                        <span class="px-2 py-0.5 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">🎥 CCTV</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-3.5 px-4">
+                        {% if s.is_maintenance %}
+                        <span class="px-2.5 py-1 text-xs font-bold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">MAINTENANCE</span>
+                        {% elif s.status == 'UP' %}
+                        <span class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">ONLINE (UP)</span>
+                        {% else %}
+                        <span class="px-2.5 py-1 text-xs font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">OFFLINE (DOWN)</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-3.5 px-4 text-right">
+                        <div class="flex items-center justify-end gap-1.5">
+                            <!-- Toggle Maintenance -->
+                            <button data-device-id="{{ s.id }}" onclick="toggleMaintenance(this.getAttribute('data-device-id'))"
+                                title="{{ 'Nonaktifkan Maintenance' if s.is_maintenance else 'Aktifkan Maintenance' }}"
+                                class="px-2.5 py-1.5 text-xs font-semibold rounded-lg {% if s.is_maintenance %}bg-amber-600/20 text-amber-400 border border-amber-500/30 hover:bg-amber-600/30{% else %}bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700{% endif %} transition">
+                                <i class="fa-solid fa-wrench"></i>
+                            </button>
+                            <!-- Edit -->
+                            <button
+                                data-id="{{ s.id }}"
+                                data-name="{{ s.name }}"
+                                data-ip="{{ s.ip_address }}"
+                                data-area="{{ s.area }}"
+                                data-dtype="{{ s.device_type }}"
+                                onclick="openEditDeviceBtn(this)"
+                                title="Edit Perangkat"
+                                class="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-blue-600/10 text-blue-400 border border-blue-500/20 hover:bg-blue-600/20 transition">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </button>
+                            <!-- Delete -->
+                            <button
+                                data-device-id="{{ s.id }}"
+                                data-device-name="{{ s.name }}"
+                                onclick="openDeleteModal(this.getAttribute('data-device-id'), this.getAttribute('data-device-name'))"
+                                title="Hapus Perangkat"
+                                class="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-red-600/10 text-red-400 border border-red-500/20 hover:bg-red-600/20 transition">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    function filterInventoryTable() {
+        const query = document.getElementById('search-device').value.toLowerCase().trim();
+        const zoneVal = document.getElementById('filter-zone').value;
+        const typeVal = document.getElementById('filter-type').value;
+
+        document.querySelectorAll('.inv-row').forEach(row => {
+            const matchName = !query || row.dataset.name.includes(query) || row.dataset.ip.includes(query);
+            const matchZone = (zoneVal === 'ALL' || row.dataset.zone === zoneVal);
+            const matchType = (typeVal === 'ALL' || row.dataset.type === typeVal);
+            row.style.display = (matchName && matchZone && matchType) ? '' : 'none';
+        });
+    }
+
+    function openEditDeviceBtn(btn) {
+        openAddDeviceModal({
+            id: btn.dataset.id,
+            name: btn.dataset.name,
+            ip_address: btn.dataset.ip,
+            area: btn.dataset.area,
+            device_type: btn.dataset.dtype
+        });
+    }
+
+    async function toggleMaintenance(deviceId) {
+        const res = await fetch(`/api/devices/${deviceId}/toggle-maintenance`, { method: 'POST' });
+        if (res.ok) window.location.reload();
+    }
+</script>
+{% endblock %}

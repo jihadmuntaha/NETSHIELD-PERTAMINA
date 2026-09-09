@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ app_name }} - NOC Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1e293b; padding-bottom: 15px; margin-bottom: 20px; }
+        h1 { color: #ef4444; margin: 0; font-size: 1.8rem; }
+        .badge { background: #1e293b; padding: 6px 12px; border-radius: 6px; font-weight: bold; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 25px; }
+        .card { background: #1e293b; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6; }
+        .card h3 { margin-top: 0; color: #94a3b8; font-size: 0.9rem; }
+        .card .value { font-size: 1.8rem; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #334155; }
+        th { background-color: #0f172a; color: #94a3b8; }
+        .status-up { color: #22c55e; font-weight: bold; }
+        .status-down { color: #ef4444; font-weight: bold; }
+        .status-maint { color: #eab308; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🚨 {{ app_name }} - FT Pengapon Semarang</h1>
+        <div class="badge">NOC Live Monitoring</div>
+    </header>
+
+    <div class="grid">
+        {% for zone in zone_summary %}
+        <div class="card">
+            <h3>{{ zone.zone_name }}</h3>
+            <div class="value">
+                <span class="status-up">{{ zone.up }}</span> / <span>{{ zone.total }}</span> UP
+                {% if zone.down > 0 %}<span class="status-down">({{ zone.down }} DOWN)</span>{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <h2>Daftar Perangkat Terpantau</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Nama Node</th>
+                <th>IP Address</th>
+                <th>Zona Area</th>
+                <th>Tipe Perangkat</th>
+                <th>Status</th>
+                <th>Response Time</th>
+                <th>Pemeliharaan</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for service in services %}
+            <tr>
+                <td><strong>{{ service.name }}</strong></td>
+                <td><code>{{ service.ip_address }}</code></td>
+                <td>{{ service.area.value if hasattr(service.area, 'value') else service.area }}</td>
+                <td>{{ service.device_type.value if hasattr(service.device_type, 'value') else service.device_type }}</td>
+                <td>
+                    {% if service.is_maintenance %}
+                    <span class="status-maint">MAINTENANCE</span>
+                    {% elif service.status == 'UP' %}
+                    <span class="status-up">ONLINE (UP)</span>
+                    {% else %}
+                    <span class="status-down">OFFLINE (DOWN)</span>
+                    {% endif %}
+                </td>
+                <td>{{ service.response_time_ms }} ms</td>
+                <td>{{ "Ya" if service.is_maintenance else "Tidak" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
