@@ -3,6 +3,20 @@
 {% block title %}NOC Live Monitoring Dashboard{% endblock %}
 
 {% block content %}
+<!-- Flash Animations Style -->
+<style>
+    @keyframes flashGreen {
+        0% { background-color: rgba(16, 185, 129, 0.45); box-shadow: inset 0 0 12px rgba(16, 185, 129, 0.6); }
+        100% { background-color: transparent; box-shadow: none; }
+    }
+    @keyframes flashRed {
+        0% { background-color: rgba(239, 68, 68, 0.45); box-shadow: inset 0 0 12px rgba(239, 68, 68, 0.6); }
+        100% { background-color: transparent; box-shadow: none; }
+    }
+    .flash-green-bg { animation: flashGreen 2.5s ease-out; }
+    .flash-red-bg { animation: flashRed 2.5s ease-out; }
+</style>
+
 <!-- Page Title Header -->
 <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
     <div>
@@ -78,6 +92,11 @@
                     class="font-bold text-slate-200">{{ services|length }}</span> Node</p>
         </div>
         <div class="flex flex-wrap items-center gap-3">
+            <div class="relative flex-1 min-w-[200px] max-w-xs">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                <input type="text" id="search-node" onkeyup="filterNodesTable()" placeholder="Cari nama perangkat atau IP..."
+                    class="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            </div>
             <select id="filter-zone" onchange="filterNodesTable()"
                 class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
                 <option value="ALL">Semua Zona</option>
@@ -111,7 +130,7 @@
             </thead>
             <tbody id="nodes-tbody" class="divide-y divide-slate-800/60 font-medium">
                 {% for s in services %}
-                <tr class="hover:bg-slate-800/40 transition node-row" data-zone="{{ s.area }}"
+                <tr class="hover:bg-slate-800/40 transition node-row" id="device-row-{{ s.id }}" data-device-id="{{ s.id }}" data-name="{{ s.name|lower }}" data-ip="{{ s.ip_address }}" data-status="{{ s.status }}" data-zone="{{ s.area }}"
                     data-device="{{ s.device_type }}">
                     <td class="py-3 px-4 font-bold text-white">{{ s.name }}</td>
                     <td class="py-3 px-4"><code
@@ -260,13 +279,27 @@
 
 <!-- SCRIPTS -->
 <script>
+    // State tracker untuk deteksi perubahan status (flash animation)
+    const previousDeviceStates = {};
+
+    // Inisialisasi awal state tracker dari DOM render
+    document.querySelectorAll('.node-row').forEach(row => {
+        const devId = row.getAttribute('data-device-id');
+        const st = row.getAttribute('data-status');
+        if (devId) {
+            previousDeviceStates[devId] = st || 'UP';
+        }
+    });
+
     function filterNodesTable() {
+        const query = (document.getElementById('search-node')?.value || '').toLowerCase().trim();
         const zoneVal = document.getElementById('filter-zone').value;
         const deviceVal = document.getElementById('filter-device').value;
         document.querySelectorAll('.node-row').forEach(row => {
+            const nameMatch = !query || (row.dataset.name && row.dataset.name.includes(query)) || (row.dataset.ip && row.dataset.ip.includes(query));
             const matchZone = (zoneVal === 'ALL' || row.dataset.zone === zoneVal);
             const matchDevice = (deviceVal === 'ALL' || row.dataset.device === deviceVal);
-            row.style.display = (matchZone && matchDevice) ? '' : 'none';
+            row.style.display = (nameMatch && matchZone && matchDevice) ? '' : 'none';
         });
     }
 
@@ -275,21 +308,61 @@
         if (res.ok) fetchDashboardSummary();
     }
 
+    function calculateZoneSummaryFromDevices(services) {
+        const zoneMap = {
+            "Zona 1 - Gate & Main Office": { zone_name: "Zona 1 - Gate & Main Office", total: 0, up: 0, down: 0, maintenance: 0 },
+            "Zona 2 - Tank Farm (Tangki Timbun)": { zone_name: "Zona 2 - Tank Farm (Tangki Timbun)", total: 0, up: 0, down: 0, maintenance: 0 },
+            "Zona 3 - Filling Shed (Loading Bay)": { zone_name: "Zona 3 - Filling Shed (Loading Bay)", total: 0, up: 0, down: 0, maintenance: 0 },
+            "Zona 4 - IT Server Room & Core Network": { zone_name: "Zona 4 - IT Server Room & Core Network", total: 0, up: 0, down: 0, maintenance: 0 }
+        };
+
+        services.forEach(s => {
+            const area = s.area;
+            if (!zoneMap[area]) {
+                zoneMap[area] = { zone_name: area, total: 0, up: 0, down: 0, maintenance: 0 };
+            }
+            zoneMap[area].total++;
+            if (s.is_maintenance) {
+                zoneMap[area].maintenance++;
+            } else if (s.status === 'UP') {
+                zoneMap[area].up++;
+            } else {
+                zoneMap[area].down++;
+            }
+        });
+
+        return Object.values(zoneMap);
+    }
+
     async function fetchDashboardSummary() {
         const refreshIcon = document.getElementById('refresh-icon');
         if (refreshIcon) refreshIcon.classList.add('fa-spin');
         try {
-            const res = await fetch('/api/dashboard-summary');
-            if (!res.ok) return;
-            const data = await res.json();
+            // Polling endpoint /api/devices dan /api/dashboard-summary
+            const [devRes, summaryRes] = await Promise.all([
+                fetch('/api/devices'),
+                fetch('/api/dashboard-summary')
+            ]);
+
+            if (!devRes.ok) return;
+            const devices = await devRes.json();
+            let summaryData = null;
+            if (summaryRes.ok) {
+                summaryData = await summaryRes.json();
+            }
 
             const countEl = document.getElementById('total-nodes-count');
-            if (countEl) countEl.innerText = data.metrics.total_services;
+            if (countEl) countEl.innerText = devices.length;
+
+            // Hitung ringkasan 4 zona secara dinamis
+            const zoneSummary = summaryData && summaryData.zone_summary 
+                ? summaryData.zone_summary 
+                : calculateZoneSummaryFromDevices(devices);
 
             const cardsContainer = document.getElementById('zone-cards-container');
-            if (cardsContainer && data.zone_summary) {
+            if (cardsContainer && zoneSummary) {
                 let html = '';
-                data.zone_summary.forEach(z => {
+                zoneSummary.forEach(z => {
                     let icon = 'fa-server';
                     if (z.zone_name.includes('Zona 1')) icon = 'fa-building';
                     else if (z.zone_name.includes('Zona 2')) icon = 'fa-oil-well';
@@ -313,15 +386,17 @@
             }
 
             const nodesTbody = document.getElementById('nodes-tbody');
-            if (nodesTbody && data.services) {
+            if (nodesTbody && devices) {
                 let html = '';
-                data.services.forEach(s => {
+                devices.forEach(s => {
                     let dBadge = `<span class="px-2 py-0.5 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">🎥 CCTV</span>`;
                     if (s.device_type === 'ROUTER') dBadge = `<span class="px-2 py-0.5 text-xs font-semibold rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">📶 ROUTER</span>`;
                     else if (s.device_type === 'SWITCH') dBadge = `<span class="px-2 py-0.5 text-xs font-semibold rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">🔀 SWITCH</span>`;
+                    
                     let statusBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">OFFLINE (DOWN)</span>`;
                     if (s.is_maintenance) statusBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">MAINTENANCE</span>`;
                     else if (s.status === 'UP') statusBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">ONLINE (UP)</span>`;
+                    
                     const latency = (s.is_maintenance || s.status === 'DOWN')
                         ? `<span class="text-slate-500">0.0 ms</span>`
                         : `<span class="text-emerald-400 font-bold">${s.response_time_ms.toFixed(2)} ms</span>`;
@@ -329,7 +404,22 @@
                         ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30 hover:bg-amber-600/30'
                         : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700';
                     const areaEsc = s.area.replace(/&/g, '&amp;');
-                    html += `<tr class="hover:bg-slate-800/40 transition node-row" data-zone="${areaEsc}" data-device="${s.device_type}">
+                    const nameEsc = s.name.replace(/"/g, '&quot;').toLowerCase();
+
+                    // Cek transisi status untuk efek animasi flash highlight
+                    let flashClass = '';
+                    const oldStatus = previousDeviceStates[s.id];
+                    if (oldStatus !== undefined && oldStatus !== s.status) {
+                        if (s.status === 'UP') {
+                            flashClass = 'flash-green-bg';
+                        } else if (s.status === 'DOWN') {
+                            flashClass = 'flash-red-bg';
+                        }
+                    }
+                    // Update tracker state
+                    previousDeviceStates[s.id] = s.status;
+
+                    html += `<tr class="hover:bg-slate-800/40 transition node-row ${flashClass}" id="device-row-${s.id}" data-device-id="${s.id}" data-name="${nameEsc}" data-ip="${s.ip_address}" data-status="${s.status}" data-zone="${areaEsc}" data-device="${s.device_type}">
                         <td class="py-3 px-4 font-bold text-white">${s.name}</td>
                         <td class="py-3 px-4"><code class="px-2 py-0.5 rounded bg-slate-800 text-blue-400 text-xs border border-slate-700">${s.ip_address}</code></td>
                         <td class="py-3 px-4 text-xs text-slate-400">${s.area}</td>
@@ -344,10 +434,51 @@
                 nodesTbody.innerHTML = html;
                 filterNodesTable();
             }
+
+            // Perbarui tabel insiden terbaru jika ada data
+            const incidentsTbody = document.getElementById('incidents-tbody');
+            if (incidentsTbody && summaryData && summaryData.recent_incidents) {
+                if (summaryData.recent_incidents.length === 0) {
+                    incidentsTbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-slate-500 italic">Tidak ada log insiden tercatat saat ini. Seluruh sistem beroperasi normal.</td></tr>`;
+                } else {
+                    let incHtml = '';
+                    summaryData.recent_incidents.forEach(inc => {
+                        let sevBadge = `<span class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">⚡ WARNING</span>`;
+                        if (inc.severity === 'DISASTER') sevBadge = `<span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🔥 DISASTER</span>`;
+                        else if (inc.severity === 'HIGH') sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚠️ HIGH</span>`;
+
+                        let stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">RESOLVED</span>`;
+                        if (inc.status === 'NEW') stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">NEW</span>`;
+                        else if (inc.status === 'ACKNOWLEDGED') stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">ACKNOWLEDGED</span>`;
+
+                        let ackCol = `<span class="text-slate-500 italic">Belum ditangani</span>`;
+                        if (inc.ack_by) {
+                            ackCol = `<div class="font-bold text-slate-200"><i class="fa-solid fa-user-check text-blue-400 mr-1"></i>${inc.ack_by}</div>
+                                      <div class="text-slate-400 italic truncate max-w-[200px]">${inc.ack_message || '-'}</div>`;
+                        }
+
+                        const dtStr = inc.created_at ? inc.created_at.replace('T', ' ').substring(0, 19) : '-';
+
+                        incHtml += `<tr class="hover:bg-slate-800/40 transition">
+                            <td class="py-3.5 px-4 font-mono text-xs text-slate-400">#INC-${inc.id}</td>
+                            <td class="py-3.5 px-4">
+                                <div class="font-bold text-white">${inc.service_name}</div>
+                                <div class="text-xs text-slate-400"><code>${inc.ip_address}</code></div>
+                            </td>
+                            <td class="py-3.5 px-4">${sevBadge}</td>
+                            <td class="py-3.5 px-4 text-xs text-slate-400 font-mono">${dtStr}</td>
+                            <td class="py-3.5 px-4">${stBadge}</td>
+                            <td class="py-3.5 px-4 text-xs">${ackCol}</td>
+                        </tr>`;
+                    });
+                    incidentsTbody.innerHTML = incHtml;
+                }
+            }
         } catch (ex) { console.error('Polling error:', ex); }
         finally { if (refreshIcon) refreshIcon.classList.remove('fa-spin'); }
     }
 
-    setInterval(fetchDashboardSummary, 10000);
+    // Auto-refresh polling setiap 3 detik
+    setInterval(fetchDashboardSummary, 3000);
 </script>
 {% endblock %}

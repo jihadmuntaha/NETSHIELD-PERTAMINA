@@ -12,85 +12,195 @@ logger = logging.getLogger(__name__)
 
 FONNTE_API_URL = "https://api.fonnte.com/send"
 
-AREA_WA_GROUP_MAP = {
-    "Zona 1 - Gate & Main Office": "WA_GROUP_OFFICE_SAFETY",
-    "Zona 2 - Tank Farm (Tangki Timbun)": "WA_GROUP_TANK_MAINTENANCE",
-    "Zona 3 - Filling Shed (Loading Bay)": "WA_GROUP_FILLING_SHED",
-    "Zona 4 - IT Server Room & Core Network": "WA_GROUP_IT_SUPPORT",
-}
+
+def _resolve_target_for_device(device) -> str:
+    """
+    Pemetaan target WA dinamis berdasarkan Zona:
+      - Zona 1 (Gate & Office)    -> WA_TARGET_ZONA_1 (fallback: WA_GROUP_OFFICE_SAFETY)
+      - Zona 2 (Tank Farm)        -> WA_TARGET_ZONA_2 (fallback: WA_GROUP_TANK_MAINTENANCE)
+      - Zona 3 (Filling Shed)     -> WA_TARGET_ZONA_3 (fallback: WA_GROUP_FILLING_SHED)
+      - Zona 4 (Core IT)          -> WA_TARGET_ZONA_4 (fallback: WA_GROUP_IT_SUPPORT)
+    """
+    area_val = device.area.value if hasattr(device.area, "value") else str(device.area)
+    target = ""
+
+    if "Zona 1" in area_val or "Gate" in area_val:
+        target = os.getenv("WA_TARGET_ZONA_1") or os.getenv("WA_GROUP_OFFICE_SAFETY") or ""
+    elif "Zona 2" in area_val or "Tank" in area_val:
+        target = os.getenv("WA_TARGET_ZONA_2") or os.getenv("WA_GROUP_TANK_MAINTENANCE") or ""
+    elif "Zona 3" in area_val or "Filling" in area_val:
+        target = os.getenv("WA_TARGET_ZONA_3") or os.getenv("WA_GROUP_FILLING_SHED") or ""
+    elif "Zona 4" in area_val or "Server" in area_val or "IT" in area_val:
+        target = os.getenv("WA_TARGET_ZONA_4") or os.getenv("WA_GROUP_IT_SUPPORT") or ""
+
+    if not target:
+        target = (
+            os.getenv("WA_TARGET_DEFAULT")
+            or os.getenv("WA_GROUP_MANAGER_DEPOT")
+            or os.getenv("FONNTE_TARGET_PHONE")
+            or ""
+        )
+
+    return target.strip()
 
 
-async def send_wa_alert(area: str, device_type: str, name: str, ip_address: str, severity: str) -> None:
-    """Send structured WhatsApp alert via Fonnte API or console fallback."""
-    fonnte_token = os.getenv("FONNTE_TOKEN", "").strip()
-
-    # Determine target WA groups
-    target_groups = []
-    env_var_name = AREA_WA_GROUP_MAP.get(area)
-    if env_var_name:
-        primary_group = os.getenv(env_var_name, "").strip()
-        if primary_group:
-            target_groups.append(primary_group)
-
-    if severity.upper() == "DISASTER":
-        manager_group = os.getenv("WA_GROUP_MANAGER_DEPOT", "").strip()
-        if manager_group and manager_group not in target_groups:
-            target_groups.append(manager_group)
-
-    # Format WIB timestamp (UTC+7)
+def _get_wib_timestamp(dt: datetime | None = None) -> str:
+    """Format timestamp dalam zona waktu WIB (UTC+7)."""
     wib_tz = timezone(timedelta(hours=7))
-    timestamp_wib = datetime.now(wib_tz).strftime("%Y-%m-%d %H:%M:%S WIB")
+    if dt is None:
+        dt = datetime.now(wib_tz)
+    elif dt.tzinfo is None:
+        dt = dt.replace(tzinfo=wib_tz)
+    else:
+        dt = dt.astimezone(wib_tz)
+    return dt.strftime("%Y-%m-%d %H:%M:%S WIB")
 
-    message = (
-        "🚨 *[PERTAMINA NETSHIELD] ALERT INSIDEN FT PENGAPON*\n"
-        f"📍 *Lokasi:* {area}\n"
-        f"🏷️ *Perangkat:* {device_type} - {name}\n"
-        f"🌐 *IP Address:* `{ip_address}`\n"
-        "🔴 *Status:* DOWN (Request Timeout)\n"
-        f"⚠️ *Severity:* {severity}\n"
-        f"⏰ *Waktu:* {timestamp_wib}\n"
-        "🔗 *Dashboard NOC:* http://192.168.150.117:5000/noc"
+
+def _format_incident_message(device, incident) -> str:
+    zona_name = device.area.value if hasattr(device.area, "value") else str(device.area)
+    device_name = device.name
+    ip_address = device.ip_address
+    severity = getattr(incident, "severity", "HIGH") or "HIGH"
+    created_at = getattr(incident, "created_at", None)
+    timestamp_wib = _get_wib_timestamp(created_at)
+
+    return (
+        "🚨 *PERTAMINA NETSHIELD - NETWORK ALERT* 🚨\n"
+        "*Lokasi:* Fuel Terminal Pengapon\n"
+        f"*Zona:* {zona_name}\n"
+        f"*Perangkat:* {device_name} ({ip_address})\n"
+        "*Status:* DOWN (Unreachable)\n"
+        f"*Severity:* {severity}\n"
+        f"*Waktu Kejadian:* {timestamp_wib}\n\n"
+        "_Mohon tim PIC terkait segera melakukan pengecekan fisik atau klaim ACK pada dashboard NOC._\n"
+        "Link Dashboard: http://localhost:5000/incidents"
     )
 
-    if not target_groups:
-        logger.warning("No target WA group configured for area '%s' / severity '%s'", area, severity)
-        target_groups = ["DEFAULT_LOG_ONLY"]
 
-    for group_target in target_groups:
-        if not fonnte_token or group_target == "DEFAULT_LOG_ONLY":
-            # Fallback console logging for local testing
-            log_output = (
-                "\n" + "=" * 50 + "\n"
-                f"[CONSOLE WA ALERT FALLBACK] Target Group: {group_target}\n"
-                f"{message}\n"
-                + "=" * 50 + "\n"
+def _format_recovery_message(device, incident=None, latency: float = 0.0) -> str:
+    zona_name = device.area.value if hasattr(device.area, "value") else str(device.area)
+    device_name = device.name
+    ip_address = device.ip_address
+
+    lat_val = latency if latency and latency > 0 else getattr(device, "response_time_ms", 0.0)
+    resolved_at = getattr(incident, "resolved_at", None) if incident else None
+    timestamp_wib = _get_wib_timestamp(resolved_at)
+
+    return (
+        "✅ *PERTAMINA NETSHIELD - RESOLVED ALERT* ✅\n"
+        "*Lokasi:* Fuel Terminal Pengapon\n"
+        f"*Zona:* {zona_name}\n"
+        f"*Perangkat:* {device_name} ({ip_address})\n"
+        "*Status:* UP (Recovered)\n"
+        f"*Latensi:* {lat_val:.1f} ms\n"
+        f"*Waktu Pulih:* {timestamp_wib}\n\n"
+        "_Insiden telah ditandai RESOLVED secara otomatis oleh sistem._"
+    )
+
+
+async def _send_fonnte_message(target: str, message: str, alert_type: str = "NOTIFICATION") -> bool:
+    fonnte_token = os.getenv("FONNTE_TOKEN", "").strip()
+
+    log_banner = (
+        f"\n" + "=" * 50 + "\n"
+        f"[FONNTE WA {alert_type}]\n"
+        f"Target : {target or 'NO_TARGET_CONFIGURED'}\n"
+        f"Message:\n{message}\n"
+        + "=" * 50 + "\n"
+    )
+    try:
+        print(log_banner)
+    except UnicodeEncodeError:
+        if hasattr(sys.stdout, "buffer"):
+            sys.stdout.buffer.write(log_banner.encode("utf-8"))
+            sys.stdout.buffer.flush()
+
+    if not fonnte_token:
+        logger.warning("[FONNTE] FONNTE_TOKEN tidak terkonfigurasi di environment.")
+        return False
+
+    if not target:
+        logger.warning("[FONNTE] Target WA tidak ditemukan untuk zona ini.")
+        return False
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                FONNTE_API_URL,
+                headers={"Authorization": fonnte_token},
+                data={
+                    "target": target,
+                    "message": message
+                }
             )
-            try:
-                print(log_output)
-            except UnicodeEncodeError:
-                # Handle Windows console cp1252 encoding gracefully
-                if hasattr(sys.stdout, "buffer"):
-                    sys.stdout.buffer.write(log_output.encode("utf-8"))
-                    sys.stdout.buffer.flush()
-                else:
-                    print(log_output.encode("ascii", errors="replace").decode("ascii"))
+            if response.status_code == 200:
+                logger.info(
+                    "[FONNTE SUCCESS] Notifikasi %s terkirim ke %s. (Response: %s)",
+                    alert_type,
+                    target,
+                    response.text[:200]
+                )
+                return True
+            else:
+                logger.error(
+                    "[FONNTE HTTP ERROR] %s ke %s (HTTP %d: %s)",
+                    alert_type,
+                    target,
+                    response.status_code,
+                    response.text[:200]
+                )
+                return False
+    except Exception as exc:
+        logger.error("[FONNTE EXCEPTION] Error saat mengirimi WA via Fonnte ke %s: %s", target, exc)
+        print(f"[FONNTE ERROR] {exc}")
+        return False
 
-        else:
-            try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.post(
-                        FONNTE_API_URL,
-                        headers={"Authorization": fonnte_token},
-                        data={
-                            "target": group_target,
-                            "message": message
-                        }
-                    )
-                    logger.info(
-                        "Fonnte WA Alert sent to %s (Status: %d, Response: %s)",
-                        group_target,
-                        response.status_code,
-                        response.text
-                    )
-            except Exception as e:
-                logger.error("Failed to send WA alert via Fonnte to %s: %s", group_target, e)
+
+async def send_incident_alert(device, incident) -> bool:
+    """
+    Kirim notifikasi WhatsApp alert (DOWN) via Fonnte API.
+    Format pesan merah untuk kondisi DOWN.
+    """
+    target = _resolve_target_for_device(device)
+    message = _format_incident_message(device, incident)
+    return await _send_fonnte_message(target, message, alert_type="INCIDENT ALERT (DOWN)")
+
+
+async def send_recovery_alert(device, incident=None, latency: float = 0.0) -> bool:
+    """
+    Kirim notifikasi WhatsApp recovery alert (UP) via Fonnte API.
+    Format pesan hijau untuk kondisi RECOVERY (UP).
+    """
+    target = _resolve_target_for_device(device)
+    message = _format_recovery_message(device, incident=incident, latency=latency)
+    return await _send_fonnte_message(target, message, alert_type="RECOVERY ALERT (UP)")
+
+
+# Legacy wrappers for backward compatibility
+async def send_wa_alert(area: str, device_type: str, name: str, ip_address: str, severity: str) -> None:
+    class DummyDevice:
+        def __init__(self, name, ip_address, area, device_type):
+            self.name = name
+            self.ip_address = ip_address
+            self.area = area
+            self.device_type = device_type
+
+    class DummyIncident:
+        def __init__(self, severity):
+            self.severity = severity
+            self.created_at = datetime.now()
+
+    await send_incident_alert(DummyDevice(name, ip_address, area, device_type), DummyIncident(severity))
+
+
+async def send_wa_recovery(area: str, device_type: str, name: str, ip_address: str, latency_ms: float) -> None:
+    class DummyDevice:
+        def __init__(self, name, ip_address, area, device_type, response_time_ms):
+            self.name = name
+            self.ip_address = ip_address
+            self.area = area
+            self.device_type = device_type
+            self.response_time_ms = response_time_ms
+
+    await send_recovery_alert(DummyDevice(name, ip_address, area, device_type, latency_ms), latency=latency_ms)
+

@@ -1,110 +1,190 @@
-import asyncio
-import re
-import sys
-import time
-from datetime import datetime
-import logging
-from sqlalchemy.orm import Session
+"""
+app/services/checker.py
+========================
+Background polling engine untuk Pertamina NetShield.
+Menggunakan Asynchronous Socket TCP Probing (Prometheus Blackbox Exporter style).
 
+Arsitektur:
+  - start_polling()  : loop utama, dipanggil dari main.py via asyncio.create_task()
+  - Setiap iterasi membuka sesi DB baru + db.expire_all() agar perubahan
+    IP/config yang dibuat via web UI selalu terbaca (tidak ada stale cache).
+  - Loop sequential per device dengan natural socket probe.
+  - Interval polling : 5 detik.
+
+Transisi status:
+  UP  → DOWN  : set status DOWN, buat IncidentLog baru + kirim WA alert
+  DOWN → UP   : set status UP, resolve insiden open, kirim WA recovery
+"""
+
+import asyncio
+import logging
+from datetime import datetime, timezone, timedelta
+
+from app.database import SessionLocal
 from app.models.monitoring import MonitoredService, IncidentLog, AreaZona
-from app.services.notifier import send_wa_alert
+from app.services.ping import run_natural_probe
+from app.services.notifier import send_incident_alert, send_recovery_alert
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Konstanta
+# ---------------------------------------------------------------------------
+POLL_INTERVAL_SEC = 5         # interval antar siklus polling (detik)
+_WIB              = timezone(timedelta(hours=7))
 
-async def ping_ip(ip_address: str) -> tuple[bool, float]:
+
+def _now_wib() -> datetime:
+    """Kembalikan datetime naive WIB (UTC+7) untuk disimpan ke database."""
+    return datetime.now(_WIB).replace(tzinfo=None)
+
+
+# ---------------------------------------------------------------------------
+# start_polling  — entry point yang dipanggil main.py
+# ---------------------------------------------------------------------------
+async def start_polling() -> None:
     """
-    Ping an IP address asynchronously using OS ping executable.
-    Returns tuple of (is_up: bool, response_time_ms: float).
+    Loop polling utama. Dipanggil sekali saat startup via asyncio.create_task().
+
+    Setiap iterasi:
+      1. Buka sesi DB baru  →  db.expire_all()  →  query perangkat aktif
+      2. Natural socket probe tiap perangkat satu per satu
+      3. Evaluasi transisi status & update DB
+      4. db.commit()  →  db.close()
+      5. Tidur POLL_INTERVAL_SEC detik
     """
-    if sys.platform == "win32":
-        cmd = ["ping", "-n", "1", "-w", "1000", ip_address]
-    else:
-        cmd = ["ping", "-c", "1", "-W", "1", ip_address]
+    logger.info(
+        "[NATURAL-PROBE] Background polling engine dimulai (interval=%ds).",
+        POLL_INTERVAL_SEC,
+    )
 
-    start_time = time.perf_counter()
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
-        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+    while True:
+        db = SessionLocal()
+        try:
+            # Paksa SQLAlchemy membaca ulang semua objek dari database
+            db.expire_all()
 
-        if proc.returncode == 0:
-            # Parse stdout to extract exact ping time if available
-            output = stdout.decode("latin-1", errors="ignore")
-            match = re.search(r"time[=<]\s*([\d.]+)\s*ms", output, re.IGNORECASE)
-            if match:
-                response_time = float(match.group(1))
+            devices = (
+                db.query(MonitoredService)
+                .filter(MonitoredService.is_maintenance == False)  # noqa: E712
+                .all()
+            )
+
+            if not devices:
+                logger.info("[NATURAL-PROBE] Tidak ada perangkat aktif untuk dipoll.")
             else:
-                response_time = round(elapsed_ms, 2)
-            return True, round(response_time, 2)
-        else:
-            return False, 0.0
+                for dev in devices:
+                    await _check_device(dev, db)
 
-    except Exception as e:
-        logger.debug("Exception while pinging IP %s: %r", ip_address, e)
-        return False, 0.0
+            db.commit()
 
+        except Exception as exc:
+            db.rollback()
+            logger.error("[NATURAL-PROBE ERROR] %s", exc, exc_info=True)
+            print(f"[NATURAL-PROBE ERROR] {exc}")
 
-async def check_single_service(service: MonitoredService, db: Session) -> None:
-    """Helper function to ping and process a single monitored service."""
-    if service.is_maintenance:
-        logger.info("Skipping service %s (%s) due to active maintenance mode.", service.name, service.ip_address)
-        return
+        finally:
+            db.close()
 
-    previous_status = service.status
-    is_up, response_time_ms = await ping_ip(service.ip_address)
-    new_status = "UP" if is_up else "DOWN"
-
-    # Anti-Flapping / Incident Trigger Logic: Transition UP -> DOWN
-    if previous_status == "UP" and new_status == "DOWN":
-        area_str = service.area.value if hasattr(service.area, "value") else str(service.area)
-        device_type_str = service.device_type.value if hasattr(service.device_type, "value") else str(service.device_type)
-
-        # Determine severity
-        if area_str == AreaZona.ZONA_4.value or "Zona 4" in area_str:
-            severity = "DISASTER"
-        else:
-            severity = "HIGH"
-
-        # Create IncidentLog entry
-        incident = IncidentLog(
-            service_id=service.id,
-            severity=severity,
-            status="NEW",
-            created_at=datetime.utcnow()
-        )
-        db.add(incident)
-
-        # Send async WA alert
-        await send_wa_alert(
-            area=area_str,
-            device_type=device_type_str,
-            name=service.name,
-            ip_address=service.ip_address,
-            severity=severity
-        )
-
-    # Update service attributes
-    service.status = new_status
-    service.response_time_ms = response_time_ms
-    service.last_check = datetime.utcnow()
+        await asyncio.sleep(POLL_INTERVAL_SEC)
 
 
-async def run_active_polling(db: Session) -> None:
+# ---------------------------------------------------------------------------
+# _check_device  — evaluasi satu perangkat dengan Natural Socket Probing
+# ---------------------------------------------------------------------------
+async def _check_device(dev: MonitoredService, db) -> None:
     """
-    Perform active network polling concurrently on all non-maintenance services.
-    Triggers incident log creation and WA alerts on UP -> DOWN transition.
+    Probe satu perangkat dengan TCP socket probing, evaluasi transisi status,
+    dan update database secara presisi.
+
+    Console Logging Format:
+      [NATURAL-PROBE] 127.0.0.1:8000 -> CONNECTED (1.4 ms) | State: UP
+      [NATURAL-PROBE] 10.4.12.1:80 -> TIMEOUT | State: DOWN
     """
-    services = db.query(MonitoredService).all()
-    if not services:
-        return
+    is_up, latency, status_lbl, target_str = await run_natural_probe(dev.ip_address)
 
-    # Run pings concurrently for high performance
-    tasks = [check_single_service(service, db) for service in services]
-    await asyncio.gather(*tasks)
+    area_str = dev.area.value if hasattr(dev.area, "value") else str(dev.area)
+    dtype_str = (
+        dev.device_type.value if hasattr(dev.device_type, "value") else str(dev.device_type)
+    )
+    prev_status = dev.status   # "UP" atau "DOWN"
 
-    db.commit()
+    # ===================================================================== UP
+    if is_up:
+        dev.response_time_ms = latency
+        dev.last_check = _now_wib()
+
+        print(f"[NATURAL-PROBE] {target_str} -> {status_lbl} ({latency:.1f} ms) | State: UP")
+
+        if prev_status == "DOWN":
+            # ------------------------------------------------ DOWN → UP (RECOVERY)
+            dev.status = "UP"
+
+            open_incidents = (
+                db.query(IncidentLog)
+                .filter(
+                    IncidentLog.service_id == dev.id,
+                    IncidentLog.status.in_(["NEW", "ACKNOWLEDGED"]),
+                )
+                .all()
+            )
+            resolved_at = _now_wib()
+            for inc in open_incidents:
+                inc.status = "RESOLVED"
+                inc.resolved_at = resolved_at
+
+            print(
+                f"[RECOVERY DETECTED] {dev.name} ({target_str}) is now UP! "
+                f"({latency:.1f} ms, {len(open_incidents)} insiden di-resolve)"
+            )
+
+            last_inc = open_incidents[-1] if open_incidents else None
+            await send_recovery_alert(
+                device=dev,
+                incident=last_inc,
+                latency=latency,
+            )
+
+        else:
+            # ------------------------------------------------ UP → UP (steady)
+            dev.status = "UP"
+
+    # =================================================================== DOWN
+    else:
+        dev.response_time_ms = 0.0
+        dev.last_check       = _now_wib()
+
+        print(f"[NATURAL-PROBE] {target_str} -> {status_lbl} | State: DOWN")
+
+        if prev_status == "UP":
+            # ----------------------------------------- UP → DOWN (INCIDENT)
+            dev.status = "DOWN"
+
+            severity = (
+                "DISASTER"
+                if area_str == AreaZona.ZONA_4.value or "Zona 4" in area_str
+                else "HIGH"
+            )
+
+            new_incident = IncidentLog(
+                service_id=dev.id,
+                severity=severity,
+                status="NEW",
+                created_at=_now_wib(),
+            )
+            db.add(new_incident)
+            db.flush()
+
+            print(
+                f"[INCIDENT CREATED] {dev.name} ({target_str}) is now DOWN! "
+                f"severity={severity}"
+            )
+
+            await send_incident_alert(
+                device=dev,
+                incident=new_incident,
+            )
+
+        else:
+            # Sudah DOWN dari sebelumnya — jaga status, jangan buat insiden duplikat
+            dev.status = "DOWN"

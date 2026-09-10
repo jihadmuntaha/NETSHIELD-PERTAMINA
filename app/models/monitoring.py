@@ -45,6 +45,7 @@ class IncidentLog(Base):
     ack_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     ack_at = Column(DateTime, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
 
     service = relationship("MonitoredService", back_populates="incidents")
 
