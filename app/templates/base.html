@@ -51,10 +51,10 @@
                     <span>Network Topology</span>
                 </a>
 
-                <!-- 3. KMZ Asset Import -->
-                <a href="/import-kmz" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'import-kmz' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
-                    <i class="fa-solid fa-earth-asia w-5 text-center {% if active_page == 'import-kmz' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
-                    <span>KMZ Asset Import</span>
+                <!-- 3. Assets Import -->
+                <a href="/import-assets" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'import-assets' or active_page == 'import-kmz' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
+                    <i class="fa-solid fa-file-import w-5 text-center {% if active_page == 'import-assets' or active_page == 'import-kmz' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
+                    <span>Assets Import</span>
                 </a>
 
                 <!-- 4. Device Management -->
@@ -141,7 +141,7 @@
                     <i class="fa-solid fa-keyboard"></i> Input Manual
                 </button>
                 <button type="button" onclick="switchDeviceModalTab('kmz')" id="tab-btn-kmz" class="py-2 px-4 text-slate-400 hover:text-slate-200 border-b-2 border-transparent font-semibold focus:outline-none transition flex items-center gap-1.5">
-                    <i class="fa-solid fa-earth-asia"></i> Import KMZ File
+                    <i class="fa-solid fa-file-import"></i> Assets Import
                 </button>
             </div>
 
@@ -186,20 +186,20 @@
                 </div>
             </form>
 
-            <!-- TAB 2: KMZ IMPORT FORM -->
+            <!-- TAB 2: ASSETS IMPORT FORM -->
             <form id="kmz-upload-form" enctype="multipart/form-data" onsubmit="submitKmzForm(event)" class="hidden space-y-4 py-1">
                 <div class="bg-slate-950/60 border-2 border-dashed border-slate-700 hover:border-blue-500 rounded-xl p-6 text-center transition group cursor-pointer" onclick="document.getElementById('kmz-file-input').click()">
                     <div class="w-12 h-12 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-                        <i class="fa-solid fa-cloud-arrow-up text-xl"></i>
+                        <i class="fa-solid fa-folder-open text-xl"></i>
                     </div>
-                    <p class="text-xs font-semibold text-slate-200">Klik atau seret (drag &amp; drop) file .KMZ di sini</p>
-                    <p class="text-[11px] text-slate-400 mt-1">Sistem membaca file <code class="px-1.5 py-0.5 rounded bg-slate-800 text-blue-400 font-mono">doc.kml</code> &amp; mengekstrak Placemarks otomatis.</p>
-                    <input type="file" id="kmz-file-input" name="file" accept=".kmz,.kml" class="hidden" onchange="handleKmzFileSelect(this)">
+                    <p class="text-xs font-semibold text-slate-200">Klik atau seret (drag &amp; drop) file aset di sini</p>
+                    <p class="text-[11px] text-slate-400 mt-1">Format: <code class="text-emerald-400 font-mono">.KMZ</code> <code class="text-emerald-400 font-mono">.KML</code> <code class="text-cyan-400 font-mono">.CSV</code> <code class="text-purple-400 font-mono">.JSON</code> <code class="text-green-400 font-mono">.XLSX</code> <code class="text-blue-400 font-mono">.TXT</code></p>
+                    <input type="file" id="kmz-file-input" name="file" accept=".kmz,.kml,.csv,.json,.geojson,.xlsx,.xls,.txt" class="hidden" onchange="handleKmzFileSelect(this)">
                 </div>
                 <div id="kmz-file-info" class="hidden bg-slate-800/80 border border-slate-700 rounded-lg p-3 flex items-center justify-between text-xs">
                     <div class="flex items-center gap-2 truncate">
                         <i class="fa-solid fa-file-lines text-emerald-400"></i>
-                        <span id="kmz-filename-display" class="font-mono text-slate-200 truncate">file.kmz</span>
+                        <span id="kmz-filename-display" class="font-mono text-slate-200 truncate">file.ext</span>
                     </div>
                     <span id="kmz-filesize-display" class="text-slate-400 shrink-0 font-mono">0 KB</span>
                 </div>
@@ -209,7 +209,7 @@
                     <button type="button" onclick="closeAddDeviceModal()" class="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">Batal</button>
                     <button type="submit" id="kmz-submit-btn" class="px-4 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30 transition flex items-center gap-1.5">
                         <i class="fa-solid fa-upload"></i>
-                        <span>Upload &amp; Import KMZ</span>
+                        <span>Upload &amp; Import Assets</span>
                     </button>
                 </div>
             </form>
@@ -317,7 +317,7 @@
             succEl.classList.add('hidden');
 
             if (!fileInput.files || fileInput.files.length === 0) {
-                errEl.innerText = 'Silakan pilih file .kmz terlebih dahulu.';
+                errEl.innerText = 'Silakan pilih file aset terlebih dahulu.';
                 errEl.classList.remove('hidden');
                 return;
             }
@@ -329,20 +329,21 @@
             submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Memproses...';
 
             try {
-                const res = await fetch('/api/devices/upload-kmz', {
+                const res = await fetch('/api/devices/upload-assets', {
                     method: 'POST',
                     body: formData
                 });
                 const data = await res.json();
                 if (res.ok) {
-                    succEl.innerText = data.message || 'Import KMZ berhasil!';
+                    succEl.innerText = data.message || 'Import Assets berhasil!';
                     succEl.classList.remove('hidden');
                     setTimeout(() => {
                         closeAddDeviceModal();
                         if (typeof fetchDashboardSummary === 'function') fetchDashboardSummary();
+                        window.location.reload();
                     }, 1200);
                 } else {
-                    errEl.innerText = data.detail || 'Gagal mengunggah file KMZ.';
+                    errEl.innerText = data.detail || 'Gagal mengunggah file assets.';
                     errEl.classList.remove('hidden');
                 }
             } catch (ex) {
@@ -350,7 +351,7 @@
                 errEl.classList.remove('hidden');
             } finally {
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="fa-solid fa-upload mr-1"></i> Upload &amp; Import KMZ';
+                submitBtn.innerHTML = '<i class="fa-solid fa-upload mr-1"></i> Upload &amp; Import Assets';
             }
         }
 

@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import engine, Base
-from app.routers import dashboard, devices, incidents
+from app.routers import dashboard, devices, incidents, webhook
 from app.routers.devices import audit_router
 
 from app.services.checker import start_polling
@@ -30,6 +30,7 @@ if os.path.exists(static_dir):
 app.include_router(dashboard.router)
 app.include_router(devices.router)
 app.include_router(incidents.router)
+app.include_router(webhook.router)
 app.include_router(audit_router)
 
 

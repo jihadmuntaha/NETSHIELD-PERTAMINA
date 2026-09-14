@@ -61,17 +61,21 @@ def _format_incident_message(device, incident) -> str:
     device_name = device.name
     ip_address = device.ip_address
     severity = getattr(incident, "severity", "HIGH") or "HIGH"
+    incident_id = getattr(incident, "id", None) or "N/A"
     created_at = getattr(incident, "created_at", None)
     timestamp_wib = _get_wib_timestamp(created_at)
 
     return (
         "🚨 *PERTAMINA NETSHIELD - NETWORK ALERT* 🚨\n"
+        f"*ID Insiden:* #{incident_id}\n"
         "*Lokasi:* Fuel Terminal Pengapon\n"
         f"*Zona:* {zona_name}\n"
         f"*Perangkat:* {device_name} ({ip_address})\n"
         "*Status:* DOWN (Unreachable)\n"
         f"*Severity:* {severity}\n"
         f"*Waktu Kejadian:* {timestamp_wib}\n\n"
+        f"📱 *KLAIM CEPAT VIA WA:* Balas pesan ini dengan format:\n"
+        f"`ACK {incident_id} <catatan>` (Contoh: `ACK {incident_id} Sedang penanganan di lokasi`)\n\n"
         "_Mohon tim PIC terkait segera melakukan pengecekan fisik atau klaim ACK pada dashboard NOC._\n"
         "Link Dashboard: http://localhost:5000/incidents"
     )
@@ -154,6 +158,11 @@ async def _send_fonnte_message(target: str, message: str, alert_type: str = "NOT
         logger.error("[FONNTE EXCEPTION] Error saat mengirimi WA via Fonnte ke %s: %s", target, exc)
         print(f"[FONNTE ERROR] {exc}")
         return False
+
+
+async def send_wa_reply(target: str, message: str) -> bool:
+    """Kirim balasan konfirmasi pesan WhatsApp balik ke pengirim/teknisi via Fonnte."""
+    return await _send_fonnte_message(target, message, alert_type="ACK REPLY CONFIRMATION")
 
 
 async def send_incident_alert(device, incident) -> bool:

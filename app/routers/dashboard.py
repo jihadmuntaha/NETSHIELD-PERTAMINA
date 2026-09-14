@@ -97,22 +97,24 @@ def topology_view(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/import-assets", response_class=HTMLResponse)
 @router.get("/import-kmz", response_class=HTMLResponse)
-def import_kmz_view(request: Request, db: Session = Depends(get_db)):
-    """Render KMZ Asset Import web page."""
-    kmz_logs = (
+def import_assets_view(request: Request, db: Session = Depends(get_db)):
+    """Render Assets Import web page."""
+    asset_logs = (
         db.query(AuditLog)
-        .filter(AuditLog.action.like("%Imported KMZ%"))
+        .filter(AuditLog.action.like("%Imported%"))
         .order_by(AuditLog.timestamp.desc())
         .limit(50)
         .all()
     )
     return templates.TemplateResponse(
         request=request,
-        name="import_kmz.html",
+        name="import_assets.html",
         context={
-            "kmz_logs": kmz_logs,
-            "active_page": "import-kmz",
+            "asset_logs": asset_logs,
+            "kmz_logs": asset_logs,
+            "active_page": "import-assets",
             "app_name": os.getenv("APP_NAME", "Pertamina NetShield")
         }
     )

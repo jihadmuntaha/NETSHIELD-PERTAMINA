@@ -1,3 +1,4 @@
+from typing import Optional
 from datetime import datetime
 import enum
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, ForeignKey, Enum as SQLEnum
@@ -48,6 +49,33 @@ class IncidentLog(Base):
     resolved_at = Column(DateTime, nullable=True)
 
     service = relationship("MonitoredService", back_populates="incidents")
+
+    @property
+    def is_acknowledged(self) -> bool:
+        return self.status == "ACKNOWLEDGED"
+
+    @is_acknowledged.setter
+    def is_acknowledged(self, val: bool):
+        if val:
+            self.status = "ACKNOWLEDGED"
+        elif self.status == "ACKNOWLEDGED":
+            self.status = "NEW"
+
+    @property
+    def acknowledged_by(self) -> Optional[str]:
+        return self.ack_by
+
+    @acknowledged_by.setter
+    def acknowledged_by(self, val: Optional[str]):
+        self.ack_by = val
+
+    @property
+    def acknowledged_at(self) -> Optional[datetime]:
+        return self.ack_at
+
+    @acknowledged_at.setter
+    def acknowledged_at(self, val: Optional[datetime]):
+        self.ack_at = val
 
 
 class AuditLog(Base):

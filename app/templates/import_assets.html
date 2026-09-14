@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block title %}Assets Import - Network Monitoring{% endblock %}
+
+{% block content %}
+<!-- Page Title Header -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+        <h2 class="text-2xl font-bold text-white tracking-wide flex items-center gap-3">
+            <i class="fa-solid fa-file-import text-emerald-500"></i>
+            <span>Assets Import</span>
+        </h2>
+        <p class="text-sm text-slate-400">Ekstraksi &amp; Import Perangkat Jaringan dari File Spasial, Spreadsheet, GeoJSON &amp; Text List</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <a href="/devices" class="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition flex items-center gap-2">
+            <i class="fa-solid fa-network-wired text-blue-400"></i>
+            <span>Lihat Inventaris Perangkat</span>
+        </a>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Main Dropzone Upload Form (2 cols) -->
+    <div class="lg:col-span-2 space-y-6">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-5">
+            <div class="border-b border-slate-800 pb-3">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-cloud-arrow-up text-blue-400"></i>
+                    <span>Unggah File Assets Jaringan</span>
+                </h3>
+                <p class="text-xs text-slate-400">Pilih file ber-ekstensi yang biasa digunakan untuk monitoring jaringan. Sistem akan membaca dan memetakan data perangkat secara otomatis.</p>
+            </div>
+
+            <form id="standalone-assets-form" enctype="multipart/form-data" onsubmit="submitStandaloneAssets(event)" class="space-y-4">
+                <div class="bg-slate-950/80 border-2 border-dashed border-slate-700 hover:border-blue-500 rounded-2xl p-10 text-center transition group cursor-pointer" onclick="document.getElementById('standalone-assets-input').click()">
+                    <div class="w-16 h-16 rounded-2xl bg-blue-600/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-folder-open text-3xl"></i>
+                    </div>
+                    <p class="text-sm font-bold text-slate-200">Klik untuk Memilih File atau Drag &amp; Drop di Sini</p>
+                    <p class="text-xs text-slate-400 mt-2 flex flex-wrap justify-center gap-1.5">
+                        <span>Format didukung:</span>
+                        <code class="px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400 font-mono">.KMZ</code>
+                        <code class="px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400 font-mono">.KML</code>
+                        <code class="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-400 font-mono">.CSV</code>
+                        <code class="px-1.5 py-0.5 rounded bg-slate-800 text-purple-400 font-mono">.JSON</code>
+                        <code class="px-1.5 py-0.5 rounded bg-slate-800 text-amber-400 font-mono">.GEOJSON</code>
+                        <code class="px-1.5 py-0.5 rounded bg-slate-800 text-green-400 font-mono">.XLSX</code>
+                        <code class="px-1.5 py-0.5 rounded bg-slate-800 text-blue-400 font-mono">.TXT</code>
+                    </p>
+                    <input type="file" id="standalone-assets-input" accept=".kmz,.kml,.csv,.json,.geojson,.xlsx,.xls,.txt" class="hidden" onchange="handleStandaloneFileSelect(this)">
+                </div>
+
+                <div id="standalone-file-info" class="hidden bg-slate-800/80 border border-slate-700 rounded-xl p-4 flex items-center justify-between text-xs shadow-md">
+                    <div class="flex items-center gap-3 truncate">
+                        <div class="w-9 h-9 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                            <i class="fa-solid fa-file-lines"></i>
+                        </div>
+                        <div>
+                            <span id="standalone-filename" class="font-bold text-slate-100 block truncate">filename.ext</span>
+                            <span id="standalone-filesize" class="text-slate-400 font-mono text-[11px]">0 KB</span>
+                        </div>
+                    </div>
+                    <button type="button" onclick="resetStandaloneAssetsForm()" class="text-slate-400 hover:text-red-400 transition p-2"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+
+                <div id="standalone-assets-error" class="hidden text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3"></div>
+                <div id="standalone-assets-success" class="hidden text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3"></div>
+
+                <div class="flex items-center justify-end gap-3 pt-2">
+                    <button type="submit" id="standalone-assets-btn" class="w-full sm:w-auto px-6 py-2.5 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-file-import"></i>
+                        <span>Proses &amp; Import Assets Jaringan</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Import History & Log Audit Card -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-clock-rotate-left text-purple-400"></i>
+                    <span>Riwayat Import &amp; Log Audit Assets</span>
+                </h3>
+                <span class="text-xs text-slate-400" id="import-log-count">{{ asset_logs|length }} Log</span>
+            </div>
+
+            <div class="space-y-3" id="assets-import-logs-list">
+                {% if not asset_logs %}
+                <p class="text-xs text-slate-500 italic text-center py-6">Belum ada riwayat pengimporan assets tercatat.</p>
+                {% endif %}
+                {% for log in asset_logs %}
+                <div class="bg-slate-950 border border-slate-800 rounded-lg p-3.5 flex items-center justify-between text-xs hover:border-slate-700 transition">
+                    <div class="space-y-1">
+                        <div class="font-bold text-slate-200 flex items-center gap-2">
+                            <i class="fa-solid fa-file-circle-check text-emerald-400"></i>
+                            <span>{{ log.action }}</span>
+                        </div>
+                        <div class="text-slate-500 text-[11px] font-mono">Diproses oleh <span class="text-blue-400 font-semibold">{{ log.user_name }}</span> (IP: {{ log.ip_address }})</div>
+                    </div>
+                    <span class="text-[11px] font-mono text-slate-400 shrink-0">{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else '-' }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Format Guide Side Panel (1 col) -->
+    <div class="space-y-6">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-4">
+            <h3 class="text-base font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+                <i class="fa-solid fa-circle-question text-amber-400"></i>
+                <span>Panduan Format File Assets</span>
+            </h3>
+
+            <div class="space-y-3 text-xs text-slate-300">
+                <p class="leading-relaxed text-slate-400">NetShield mendukung berbagai format standar data pemantauan jaringan:</p>
+
+                <!-- Format 1: KMZ / KML -->
+                <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-1.5">
+                    <div class="flex items-center gap-2 font-bold text-emerald-400">
+                        <i class="fa-solid fa-earth-asia"></i>
+                        <span>Google Earth (.KMZ / .KML)</span>
+                    </div>
+                    <p class="text-[11px] text-slate-400">Mengekstrak tag <code class="text-blue-400">&lt;Placemark&gt;</code>, koordinat spasial, serta IPv4 &amp; Zona dari deskripsi placemark.</p>
+                </div>
+
+                <!-- Format 2: CSV / Excel -->
+                <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-1.5">
+                    <div class="flex items-center gap-2 font-bold text-cyan-400">
+                        <i class="fa-solid fa-file-excel"></i>
+                        <span>Spreadsheet (.CSV / .XLSX)</span>
+                    </div>
+                    <p class="text-[11px] text-slate-400">Kolom header otomatis terdeteksi: <code class="text-blue-400">Name</code>, <code class="text-blue-400">IP</code>, <code class="text-blue-400">Area/Zona</code>, dan <code class="text-blue-400">Type</code>.</p>
+                </div>
+
+                <!-- Format 3: JSON / GeoJSON -->
+                <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-1.5">
+                    <div class="flex items-center gap-2 font-bold text-purple-400">
+                        <i class="fa-solid fa-code"></i>
+                        <span>GeoJSON / JSON (.json / .geojson)</span>
+                    </div>
+                    <p class="text-[11px] text-slate-400">Mendukung ekspor topology GeoJSON <code class="text-blue-400">FeatureCollection</code> atau array JSON inventaris perangkat.</p>
+                </div>
+
+                <!-- Format 4: TXT List -->
+                <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-1.5">
+                    <div class="flex items-center gap-2 font-bold text-blue-400">
+                        <i class="fa-solid fa-file-lines"></i>
+                        <span>Text List (.TXT)</span>
+                    </div>
+                    <p class="text-[11px] text-slate-400">Daftar baris alamat IP &amp; nama perangkat sederhana. Sistem mengekstrak IPv4 otomatis.</p>
+                </div>
+
+                <!-- Auto Assign info -->
+                <div class="bg-blue-950/40 border border-blue-800/40 rounded-lg p-3 space-y-1">
+                    <span class="font-bold text-blue-300 block">Autokomposisi NetShield:</span>
+                    <p class="text-[11px] text-slate-400 leading-relaxed">Jika IP atau Zona tidak tercantum dalam file, NetShield mengalokasikan Subnet IP &amp; Zona area secara cerdas.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function handleStandaloneFileSelect(input) {
+        const infoBox = document.getElementById('standalone-file-info');
+        const nameDisplay = document.getElementById('standalone-filename');
+        const sizeDisplay = document.getElementById('standalone-filesize');
+        if (input.files && input.files[0]) {
+            const f = input.files[0];
+            nameDisplay.innerText = f.name;
+            sizeDisplay.innerText = (f.size / 1024).toFixed(1) + ' KB';
+            infoBox.classList.remove('hidden');
+        } else {
+            infoBox.classList.add('hidden');
+        }
+    }
+
+    function resetStandaloneAssetsForm() {
+        document.getElementById('standalone-assets-form').reset();
+        document.getElementById('standalone-file-info').classList.add('hidden');
+        document.getElementById('standalone-assets-error').classList.add('hidden');
+        document.getElementById('standalone-assets-success').classList.add('hidden');
+    }
+
+    async function submitStandaloneAssets(e) {
+        e.preventDefault();
+        const fileInput = document.getElementById('standalone-assets-input');
+        const errEl = document.getElementById('standalone-assets-error');
+        const succEl = document.getElementById('standalone-assets-success');
+        const submitBtn = document.getElementById('standalone-assets-btn');
+
+        errEl.classList.add('hidden');
+        succEl.classList.add('hidden');
+
+        if (!fileInput.files || fileInput.files.length === 0) {
+            errEl.innerText = 'Silakan pilih file terlebih dahulu.';
+            errEl.classList.remove('hidden');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Memproses &amp; Mengimpor...';
+
+        try {
+            const res = await fetch('/api/devices/upload-assets', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            if (res.ok) {
+                succEl.innerText = data.message || 'Import Assets Berhasil!';
+                succEl.classList.remove('hidden');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            } else {
+                errEl.innerText = data.detail || 'Gagal memproses file assets.';
+                errEl.classList.remove('hidden');
+            }
+        } catch(ex) {
+            errEl.innerText = 'Error koneksi: ' + ex;
+            errEl.classList.remove('hidden');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fa-solid fa-file-import mr-2"></i> Proses &amp; Import Assets Jaringan';
+        }
+    }
+</script>
+{% endblock %}
