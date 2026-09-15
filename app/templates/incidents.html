@@ -28,7 +28,14 @@
                 <i class="fa-solid fa-clock-rotate-left text-blue-400"></i>
                 <span>Daftar Log Kejadian Gangguan</span>
             </h3>
-            <p class="text-xs text-slate-400">Total Laporan: <span class="font-bold text-slate-200">{{ incidents|length }}</span> Insiden</p>
+            <p class="text-xs text-slate-400">Total Laporan: <span id="total-incidents-count" class="font-bold text-slate-200">{{ incidents|length }}</span> Insiden
+                <span class="ml-2 font-mono text-[11px] text-slate-300 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                    <span id="unack-count" class="text-red-400 font-bold">0</span> Unacknowledged / 
+                    <span id="ack-count" class="text-blue-400 font-bold">0</span> Acknowledged / 
+                    <span id="res-count" class="text-emerald-400 font-bold">0</span> Resolved
+                </span>
+            </p>
+
         </div>
         <div class="flex items-center gap-3">
             <select id="filter-status" onchange="filterIncidentsTable()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
@@ -181,9 +188,100 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ack_by: ackBy, ack_message: ackMsg })
             });
-            if (res.ok) { closeAckModal(); window.location.reload(); }
-            else { const e = await res.json(); alert('Gagal ACK: ' + (e.detail || 'Kesalahan')); }
+            if (res.ok) {
+                closeAckModal();
+                fetchIncidentsRealtime();
+            } else {
+                const e = await res.json();
+                alert('Gagal ACK: ' + (e.detail || 'Kesalahan'));
+            }
         } catch (ex) { alert('Error: ' + ex); }
     }
+
+    async function fetchIncidentsRealtime() {
+        try {
+            // Polling API endpoint untuk update status real-time
+            const res = await fetch('/api/incidents');
+            if (!res.ok) return;
+            const data = await res.json();
+
+            let unackCount = 0;
+            let ackCount = 0;
+            let resCount = 0;
+
+            data.forEach(inc => {
+                if (inc.status === 'RESOLVED') resCount++;
+                else if (inc.status === 'ACKNOWLEDGED' || inc.is_acknowledged) ackCount++;
+                else unackCount++;
+            });
+
+            const totalEl = document.getElementById('total-incidents-count');
+            const unackEl = document.getElementById('unack-count');
+            const ackEl = document.getElementById('ack-count');
+            const resEl = document.getElementById('res-count');
+
+            if (totalEl) totalEl.innerText = data.length;
+            if (unackEl) unackEl.innerText = unackCount;
+            if (ackEl) ackEl.innerText = ackCount;
+            if (resEl) resEl.innerText = resCount;
+
+            const incidentsTbody = document.getElementById('incidents-tbody');
+            if (incidentsTbody && data) {
+                if (data.length === 0) {
+                    incidentsTbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-500 italic">Tidak ada log insiden tercatat saat ini. Seluruh sistem beroperasi normal.</td></tr>`;
+                } else {
+                    let html = '';
+                    data.forEach(inc => {
+                        let sevBadge = `<span class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">⚡ WARNING</span>`;
+                        if (inc.severity === 'DISASTER') sevBadge = `<span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🔥 DISASTER</span>`;
+                        else if (inc.severity === 'HIGH') sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚠️ HIGH</span>`;
+
+                        let stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">RESOLVED</span>`;
+                        let claimCol = `<span class="text-xs text-slate-500 font-semibold"><i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i>Resolved</span>`;
+
+                        const incSrvName = inc.service ? inc.service.name : (inc.service_name || 'Node');
+                        const srvIp = inc.service ? inc.service.ip_address : (inc.ip_address || '-');
+
+                        if (inc.status === 'NEW' || (!inc.is_acknowledged && inc.status !== 'ACKNOWLEDGED' && inc.status !== 'RESOLVED')) {
+                            stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">NEW</span>`;
+                            const srvEsc = incSrvName.replace(/"/g, '&quot;');
+                            claimCol = `<button data-inc-id="${inc.id}" data-srv-name="${srvEsc}" onclick="openAckModal(this.getAttribute('data-inc-id'), this.getAttribute('data-srv-name'))" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/30 transition"><i class="fa-solid fa-hand-holding-hand mr-1"></i>Claim ACK</button>`;
+                        } else if (inc.status === 'ACKNOWLEDGED' || inc.is_acknowledged) {
+                            stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">ACKNOWLEDGED</span>`;
+                            claimCol = `<span class="text-xs text-slate-500 font-semibold"><i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i>Claimed</span>`;
+                        }
+
+                        const ackBy = inc.ack_by || inc.acknowledged_by;
+                        let ackCol = `<span class="text-slate-500 italic">Belum ditangani</span>`;
+                        if (ackBy) {
+                            ackCol = `<div class="font-bold text-slate-200"><i class="fa-solid fa-user-check text-blue-400 mr-1"></i>${ackBy}</div><div class="text-slate-400 italic truncate max-w-[220px]">${inc.ack_message || '-'}</div>`;
+                        }
+
+                        const dtStr = inc.created_at ? inc.created_at.replace('T', ' ').substring(0, 19) : '-';
+
+                        html += `<tr class="hover:bg-slate-800/40 transition inc-row" data-status="${inc.status}" data-severity="${inc.severity}" id="inc-row-${inc.id}">
+                            <td class="py-3.5 px-4 font-mono text-xs text-slate-400">#INC-${inc.id}</td>
+                            <td class="py-3.5 px-4">
+                                <div class="font-bold text-white">${incSrvName}</div>
+                                <div class="text-xs text-slate-400"><code>${srvIp}</code></div>
+                            </td>
+                            <td class="py-3.5 px-4">${sevBadge}</td>
+                            <td class="py-3.5 px-4 text-xs text-slate-400 font-mono">${dtStr}</td>
+                            <td class="py-3.5 px-4">${stBadge}</td>
+                            <td class="py-3.5 px-4 text-xs">${ackCol}</td>
+                            <td class="py-3.5 px-4 text-right">${claimCol}</td>
+                        </tr>`;
+                    });
+                    incidentsTbody.innerHTML = html;
+                    filterIncidentsTable();
+                }
+            }
+        } catch (ex) { console.error('Incidents polling error:', ex); }
+    }
+
+    // Jalankan polling awal dan set interval 3 detik
+    fetchIncidentsRealtime();
+    setInterval(fetchIncidentsRealtime, 3000);
 </script>
+
 {% endblock %}

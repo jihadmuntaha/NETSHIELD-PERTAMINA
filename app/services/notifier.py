@@ -165,6 +165,29 @@ async def send_wa_reply(target: str, message: str) -> bool:
     return await _send_fonnte_message(target, message, alert_type="ACK REPLY CONFIRMATION")
 
 
+def format_ack_confirmation(
+    incident_id: int,
+    device_name: str,
+    ip_address: str,
+    zone_name: str,
+    acknowledged_by: str,
+    acknowledged_at_formatted: str,
+    ack_message: str,
+) -> str:
+    """Format pesan konfirmasi ACK insiden sesuai template Fonnte."""
+    return (
+        "✅ *PERTAMINA NETSHIELD - ACK CONFIRMED* ✅\n"
+        f"*ID Insiden:* #{incident_id}\n"
+        f"*Perangkat:* {device_name} ({ip_address})\n"
+        f"*Zona:* {zone_name}\n"
+        f"*PIC:* {acknowledged_by}\n"
+        f"*Waktu ACK:* {acknowledged_at_formatted} WIB\n"
+        f"*Catatan:* {ack_message}\n\n"
+        "_Status di Dashboard NOC telah diperbarui._"
+    )
+
+
+
 async def send_incident_alert(device, incident) -> bool:
     """
     Kirim notifikasi WhatsApp alert (DOWN) via Fonnte API.

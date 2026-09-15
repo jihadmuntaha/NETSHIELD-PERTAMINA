@@ -198,13 +198,19 @@
                 <i class="fa-solid fa-triangle-exclamation text-red-500"></i>
                 <span>Log Insiden Terbaru</span>
             </h3>
-            <p class="text-xs text-slate-400">Ringkasan laporan gangguan terkini</p>
+            <p class="text-xs text-slate-400">Ringkasan laporan gangguan terkini
+                <span class="ml-2 font-mono text-[11px] text-slate-300 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                    <span id="unack-incidents-count" class="text-red-400 font-bold">0</span> Unacknowledged / 
+                    <span id="ack-incidents-count" class="text-blue-400 font-bold">0</span> Acknowledged
+                </span>
+            </p>
         </div>
         <a href="/incidents"
             class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 transition">
             Lihat Semua Log <i class="fa-solid fa-arrow-right ml-1"></i>
         </a>
     </div>
+
     <div class="overflow-x-auto">
         <table class="w-full text-left text-sm text-slate-300">
             <thead class="bg-slate-950 text-xs uppercase text-slate-400 border-b border-slate-800">
@@ -435,45 +441,71 @@
                 filterNodesTable();
             }
 
-            // Perbarui tabel insiden terbaru jika ada data
-            const incidentsTbody = document.getElementById('incidents-tbody');
-            if (incidentsTbody && summaryData && summaryData.recent_incidents) {
-                if (summaryData.recent_incidents.length === 0) {
-                    incidentsTbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-slate-500 italic">Tidak ada log insiden tercatat saat ini. Seluruh sistem beroperasi normal.</td></tr>`;
-                } else {
-                    let incHtml = '';
-                    summaryData.recent_incidents.forEach(inc => {
-                        let sevBadge = `<span class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">⚡ WARNING</span>`;
-                        if (inc.severity === 'DISASTER') sevBadge = `<span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🔥 DISASTER</span>`;
-                        else if (inc.severity === 'HIGH') sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚠️ HIGH</span>`;
+            // Perbarui tabel insiden terbaru secara real-time dari /api/v1/incidents/active
+            try {
+                const activeRes = await fetch('/api/v1/incidents/active');
+                if (activeRes.ok) {
+                    const activeList = await activeRes.json();
+                    let unackCount = 0;
+                    let ackCount = 0;
 
-                        let stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">RESOLVED</span>`;
-                        if (inc.status === 'NEW') stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">NEW</span>`;
-                        else if (inc.status === 'ACKNOWLEDGED') stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">ACKNOWLEDGED</span>`;
-
-                        let ackCol = `<span class="text-slate-500 italic">Belum ditangani</span>`;
-                        if (inc.ack_by) {
-                            ackCol = `<div class="font-bold text-slate-200"><i class="fa-solid fa-user-check text-blue-400 mr-1"></i>${inc.ack_by}</div>
-                                      <div class="text-slate-400 italic truncate max-w-[200px]">${inc.ack_message || '-'}</div>`;
-                        }
-
-                        const dtStr = inc.created_at ? inc.created_at.replace('T', ' ').substring(0, 19) : '-';
-
-                        incHtml += `<tr class="hover:bg-slate-800/40 transition">
-                            <td class="py-3.5 px-4 font-mono text-xs text-slate-400">#INC-${inc.id}</td>
-                            <td class="py-3.5 px-4">
-                                <div class="font-bold text-white">${inc.service_name}</div>
-                                <div class="text-xs text-slate-400"><code>${inc.ip_address}</code></div>
-                            </td>
-                            <td class="py-3.5 px-4">${sevBadge}</td>
-                            <td class="py-3.5 px-4 text-xs text-slate-400 font-mono">${dtStr}</td>
-                            <td class="py-3.5 px-4">${stBadge}</td>
-                            <td class="py-3.5 px-4 text-xs">${ackCol}</td>
-                        </tr>`;
+                    activeList.forEach(inc => {
+                        if (inc.status === 'ACKNOWLEDGED' || inc.is_acknowledged) ackCount++;
+                        else unackCount++;
                     });
-                    incidentsTbody.innerHTML = incHtml;
+
+                    const unackEl = document.getElementById('unack-incidents-count');
+                    const ackEl = document.getElementById('ack-incidents-count');
+                    if (unackEl) unackEl.innerText = unackCount;
+                    if (ackEl) ackEl.innerText = ackCount;
+
+                    const incidentsTbody = document.getElementById('incidents-tbody');
+                    if (incidentsTbody) {
+                        if (activeList.length === 0) {
+                            incidentsTbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-slate-500 italic">Tidak ada log insiden aktif saat ini. Seluruh sistem beroperasi normal.</td></tr>`;
+                        } else {
+                            let incHtml = '';
+                            activeList.forEach(inc => {
+                                let sevBadge = `<span class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">⚡ WARNING</span>`;
+                                if (inc.severity === 'DISASTER') sevBadge = `<span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🔥 DISASTER</span>`;
+                                else if (inc.severity === 'HIGH') sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚠️ HIGH</span>`;
+
+                                let stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">RESOLVED</span>`;
+                                if (inc.status === 'NEW' || (!inc.is_acknowledged && inc.status !== 'ACKNOWLEDGED')) {
+                                    stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">NEW / UNACKNOWLEDGED</span>`;
+                                } else if (inc.status === 'ACKNOWLEDGED' || inc.is_acknowledged) {
+                                    stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">ACKNOWLEDGED</span>`;
+                                }
+
+                                const ackBy = inc.acknowledged_by || inc.ack_by;
+                                const ackMsg = inc.ack_message || '-';
+                                const ackTime = inc.acknowledged_at ? ` (${inc.acknowledged_at})` : '';
+
+                                let ackCol = `<span class="text-slate-500 italic">Belum ditangani</span>`;
+                                if (ackBy) {
+                                    ackCol = `<div class="font-bold text-slate-200"><i class="fa-solid fa-user-check text-blue-400 mr-1"></i>${ackBy}<span class="text-slate-400 text-[11px] font-mono ml-1">${ackTime}</span></div>
+                                              <div class="text-slate-400 italic truncate max-w-[200px]">${ackMsg}</div>`;
+                                }
+
+                                const dtStr = inc.created_at ? inc.created_at.replace('T', ' ').substring(0, 19) : '-';
+
+                                incHtml += `<tr class="hover:bg-slate-800/40 transition" id="inc-row-${inc.id}">
+                                    <td class="py-3.5 px-4 font-mono text-xs text-slate-400">#INC-${inc.id}</td>
+                                    <td class="py-3.5 px-4">
+                                        <div class="font-bold text-white">${inc.device_name || inc.service_name || 'N/A'}</div>
+                                        <div class="text-xs text-slate-400"><code>${inc.ip_address || '-'}</code></div>
+                                    </td>
+                                    <td class="py-3.5 px-4">${sevBadge}</td>
+                                    <td class="py-3.5 px-4 text-xs text-slate-400 font-mono">${dtStr}</td>
+                                    <td class="py-3.5 px-4">${stBadge}</td>
+                                    <td class="py-3.5 px-4 text-xs">${ackCol}</td>
+                                </tr>`;
+                            });
+                            incidentsTbody.innerHTML = incHtml;
+                        }
+                    }
                 }
-            }
+            } catch (exInc) { console.error('Active incidents fetch error:', exInc); }
         } catch (ex) { console.error('Polling error:', ex); }
         finally { if (refreshIcon) refreshIcon.classList.remove('fa-spin'); }
     }
@@ -481,4 +513,5 @@
     // Auto-refresh polling setiap 3 detik
     setInterval(fetchDashboardSummary, 3000);
 </script>
+
 {% endblock %}

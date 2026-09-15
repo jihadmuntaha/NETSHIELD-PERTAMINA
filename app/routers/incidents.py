@@ -12,6 +12,7 @@ from app.models.monitoring import IncidentLog, AuditLog
 from app.schemas.monitoring import IncidentResponse, IncidentAcknowledge
 
 router = APIRouter(prefix="/api/incidents", tags=["Incidents"])
+v1_router = APIRouter(prefix="/api/v1/incidents", tags=["Incidents V1"])
 
 
 class AckPayload(BaseModel):
@@ -23,6 +24,59 @@ class AckPayload(BaseModel):
 def get_incidents(db: Session = Depends(get_db)):
     """List all active and historical incident logs."""
     return db.query(IncidentLog).order_by(IncidentLog.created_at.desc()).all()
+
+
+@router.get("/active")
+@v1_router.get("/active")
+def get_active_incidents(db: Session = Depends(get_db)):
+    """
+    Endpoint API Penyedia Data Insiden Aktif (status != 'RESOLVED').
+    Kembalikan data JSON ringan untuk polling status real-time dan ACK.
+    """
+    incidents = (
+        db.query(IncidentLog)
+        .options(joinedload(IncidentLog.service))
+        .filter(IncidentLog.status != "RESOLVED")
+        .order_by(IncidentLog.created_at.desc())
+        .all()
+    )
+
+    result = []
+    wib_tz = timezone(timedelta(hours=7))
+
+    for inc in incidents:
+        service_name = inc.service.name if inc.service else "N/A"
+        ip_address = inc.service.ip_address if inc.service else "N/A"
+        zone = (
+            inc.service.area.value
+            if inc.service and hasattr(inc.service.area, "value")
+            else str(inc.service.area if inc.service else "N/A")
+        )
+
+        ack_at_formatted = None
+        if inc.ack_at:
+            ack_dt = inc.ack_at.replace(tzinfo=wib_tz) if inc.ack_at.tzinfo is None else inc.ack_at.astimezone(wib_tz)
+            ack_at_formatted = ack_dt.strftime("%H:%M WIB")
+
+        is_ack = (inc.status == "ACKNOWLEDGED") or getattr(inc, "is_acknowledged", False)
+        ack_by_name = inc.ack_by or getattr(inc, "acknowledged_by", None)
+
+        result.append({
+            "id": inc.id,
+            "device_name": service_name,
+            "ip_address": ip_address,
+            "zone": zone,
+            "severity": inc.severity,
+            "status": inc.status,
+            "is_acknowledged": is_ack,
+            "acknowledged_by": ack_by_name,
+            "acknowledged_at": ack_at_formatted,
+            "ack_message": inc.ack_message or "",
+            "created_at": inc.created_at.strftime("%Y-%m-%d %H:%M:%S") if inc.created_at else None,
+        })
+
+    return result
+
 
 
 @router.post("/{incident_id}/ack", response_model=IncidentResponse)
