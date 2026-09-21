@@ -10,6 +10,7 @@ from app.routers import dashboard, devices, incidents, webhook
 from app.routers.devices import audit_router
 
 from app.services.checker import start_polling
+from app.services.prom_poller import monitor_prometheus_targets
 from seed import seed_data
 
 logging.basicConfig(level=logging.INFO)
@@ -48,6 +49,7 @@ async def on_startup():
 
     # Jalankan background polling sebagai asyncio task non-blocking
     asyncio.create_task(start_polling())
+    asyncio.create_task(monitor_prometheus_targets())
 
 
 @app.get("/")

@@ -23,7 +23,7 @@ class AckPayload(BaseModel):
 @router.get("", response_model=List[IncidentResponse])
 def get_incidents(db: Session = Depends(get_db)):
     """List all active and historical incident logs."""
-    return db.query(IncidentLog).order_by(IncidentLog.created_at.desc()).all()
+    return db.query(IncidentLog).options(joinedload(IncidentLog.service)).order_by(IncidentLog.created_at.desc()).all()
 
 
 @router.get("/active")

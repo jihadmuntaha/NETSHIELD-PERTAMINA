@@ -65,6 +65,7 @@ class IncidentResponse(IncidentBase):
     created_at: datetime
     ack_at: Optional[datetime] = None
     resolved_at: Optional[datetime] = None
+    service: Optional[ServiceResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
 

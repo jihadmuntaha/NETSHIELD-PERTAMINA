@@ -74,6 +74,9 @@ async def start_polling() -> None:
                 logger.info("[NATURAL-PROBE] Tidak ada perangkat aktif untuk dipoll.")
             else:
                 for dev in devices:
+                    if "9090" in str(dev.ip_address) or "prometheus" in str(dev.name).lower():
+                        # Dipantau khusus oleh prom_poller.py
+                        continue
                     await _check_device(dev, db)
 
             db.commit()

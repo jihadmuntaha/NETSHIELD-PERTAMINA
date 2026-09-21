@@ -90,16 +90,40 @@ def _format_recovery_message(device, incident=None, latency: float = 0.0) -> str
     resolved_at = getattr(incident, "resolved_at", None) if incident else None
     timestamp_wib = _get_wib_timestamp(resolved_at)
 
-    return (
-        "✅ *PERTAMINA NETSHIELD - RESOLVED ALERT* ✅\n"
-        "*Lokasi:* Fuel Terminal Pengapon\n"
-        f"*Zona:* {zona_name}\n"
-        f"*Perangkat:* {device_name} ({ip_address})\n"
-        "*Status:* UP (Recovered)\n"
-        f"*Latensi:* {lat_val:.1f} ms\n"
-        f"*Waktu Pulih:* {timestamp_wib}\n\n"
+    downtime_str = ""
+    if incident and getattr(incident, "created_at", None) and getattr(incident, "resolved_at", None):
+        delta = incident.resolved_at - incident.created_at
+        total_seconds = max(0, int(delta.total_seconds()))
+        minutes, seconds = divmod(total_seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours > 0:
+            downtime_str = f"{hours}j {minutes}m {seconds}d"
+        elif minutes > 0:
+            downtime_str = f"{minutes}m {seconds}d"
+        else:
+            downtime_str = f"{seconds}d"
+
+    pic_name = getattr(incident, "ack_by", None) or getattr(incident, "acknowledged_by", None)
+
+    msg_lines = [
+        "✅ *PERTAMINA NETSHIELD - RESOLVED ALERT* ✅",
+        "*Lokasi:* Fuel Terminal Pengapon",
+        f"*Zona:* {zona_name}",
+        f"*Perangkat:* {device_name} ({ip_address})",
+        "*Status:* UP (Recovered)",
+    ]
+    if downtime_str:
+        msg_lines.append(f"*Downtime:* {downtime_str}")
+    if pic_name:
+        msg_lines.append(f"*PIC Penangan:* {pic_name}")
+
+    msg_lines.extend([
+        f"*Latensi:* {lat_val:.1f} ms",
+        f"*Waktu Pulih:* {timestamp_wib}\n",
         "_Insiden telah ditandai RESOLVED secara otomatis oleh sistem._"
-    )
+    ])
+
+    return "\n".join(msg_lines)
 
 
 async def _send_fonnte_message(target: str, message: str, alert_type: str = "NOTIFICATION") -> bool:
@@ -188,11 +212,29 @@ def format_ack_confirmation(
 
 
 
+_last_alert_sent = {}
+
+
+def _is_alert_cooldown_active(dev_identifier: str, alert_type: str, cooldown_seconds: int = 60) -> bool:
+    now = datetime.now()
+    key = (dev_identifier, alert_type)
+    last_sent = _last_alert_sent.get(key)
+    if last_sent and (now - last_sent).total_seconds() < cooldown_seconds:
+        return True
+    _last_alert_sent[key] = now
+    return False
+
+
 async def send_incident_alert(device, incident) -> bool:
     """
     Kirim notifikasi WhatsApp alert (DOWN) via Fonnte API.
     Format pesan merah untuk kondisi DOWN.
     """
+    dev_key = str(getattr(device, "id", None) or getattr(device, "ip_address", "unknown"))
+    if _is_alert_cooldown_active(dev_key, "DOWN", cooldown_seconds=60):
+        logger.warning("[FONNTE COOLDOWN] Notifikasi DOWN untuk perangkat %s diabaikan (cooldown 60s).", dev_key)
+        return False
+
     target = _resolve_target_for_device(device)
     message = _format_incident_message(device, incident)
     return await _send_fonnte_message(target, message, alert_type="INCIDENT ALERT (DOWN)")
@@ -203,6 +245,11 @@ async def send_recovery_alert(device, incident=None, latency: float = 0.0) -> bo
     Kirim notifikasi WhatsApp recovery alert (UP) via Fonnte API.
     Format pesan hijau untuk kondisi RECOVERY (UP).
     """
+    dev_key = str(getattr(device, "id", None) or getattr(device, "ip_address", "unknown"))
+    if _is_alert_cooldown_active(dev_key, "UP", cooldown_seconds=60):
+        logger.warning("[FONNTE COOLDOWN] Notifikasi UP untuk perangkat %s diabaikan (cooldown 60s).", dev_key)
+        return False
+
     target = _resolve_target_for_device(device)
     message = _format_recovery_message(device, incident=incident, latency=latency)
     return await _send_fonnte_message(target, message, alert_type="RECOVERY ALERT (UP)")
