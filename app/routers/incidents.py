@@ -116,27 +116,76 @@ def acknowledge_incident(
     return incident
 
 
+def format_duration(seconds: Optional[float]) -> str:
+    """Helper untuk memformat durasi detik ke format human-readable (contoh: '15m 30s')."""
+    if seconds is None or seconds < 0:
+        return "-"
+    tot = int(seconds)
+    hours, remainder = divmod(tot, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours}h {minutes}m {secs}s"
+    elif minutes > 0:
+        return f"{minutes}m {secs}s"
+    else:
+        return f"{secs}s"
+
+
 @router.get("/export-csv")
-def export_incidents_csv(db: Session = Depends(get_db)):
-    """Stream all incident logs as a CSV file."""
-    incidents = db.query(IncidentLog).options(joinedload(IncidentLog.service)).order_by(IncidentLog.created_at.desc()).all()
+def export_incidents_csv(
+    target_date: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Stream incident logs as a CSV file with date filter (WIB), BOM UTF-8, and SLA calculation."""
+    wib_tz = timezone(timedelta(hours=7))
+    now_wib = datetime.now(wib_tz)
+    
+    if target_date:
+        try:
+            date_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Format tanggal tidak valid. Gunakan YYYY-MM-DD.")
+    else:
+        date_obj = now_wib.date()
+
+    report_date_str = date_obj.strftime("%Y-%m-%d")
+
+    # Filter rentang tanggal WIB (00:00:00 s/d 23:59:59 WIB) -> Konversi ke UTC
+    start_wib = datetime.combine(date_obj, datetime.min.time())
+    end_wib = datetime.combine(date_obj, datetime.max.time())
+    start_utc = start_wib - timedelta(hours=7)
+    end_utc = end_wib - timedelta(hours=7)
+
+    incidents = (
+        db.query(IncidentLog)
+        .options(joinedload(IncidentLog.service))
+        .filter(IncidentLog.created_at >= start_utc, IncidentLog.created_at <= end_utc)
+        .order_by(IncidentLog.created_at.desc())
+        .all()
+    )
 
     def iter_csv():
         output = io.StringIO()
         writer = csv.writer(output)
         
+        # Write UTF-8 BOM
+        yield "\ufeff"
+
         # Write CSV Header
         writer.writerow([
-            "ID",
-            "Service Name",
+            "ID Insiden",
+            "Nama Perangkat",
             "IP Address",
-            "Area",
+            "Area / Zona",
             "Severity",
             "Status",
-            "Created At (UTC)",
-            "Ack By",
-            "Ack Message",
-            "Ack At (WIB)"
+            "Waktu Kejadian (WIB)",
+            "Teknisi (ACK By)",
+            "Catatan ACK",
+            "Waktu ACK (WIB)",
+            "SLA ACK (TTA)",
+            "Waktu Selesai (WIB)",
+            "SLA Resolve (TTR)"
         ])
         yield output.getvalue()
         output.seek(0)
@@ -146,26 +195,59 @@ def export_incidents_csv(db: Session = Depends(get_db)):
         for item in incidents:
             service_name = item.service.name if item.service else "N/A"
             ip_address = item.service.ip_address if item.service else "N/A"
-            area = item.service.area.value if item.service and hasattr(item.service.area, "value") else (item.service.area if item.service else "N/A")
+            area = (
+                item.service.area.value
+                if item.service and hasattr(item.service.area, "value")
+                else (item.service.area if item.service else "N/A")
+            )
+
+            # Konversi created_at (UTC DB) ke WIB (+7)
+            created_wib_dt = item.created_at + timedelta(hours=7) if item.created_at else None
+            created_wib_str = created_wib_dt.strftime("%Y-%m-%d %H:%M:%S") if created_wib_dt else "-"
+
+            # ack_at (WIB)
+            ack_wib_dt = item.ack_at
+            ack_wib_str = ack_wib_dt.strftime("%Y-%m-%d %H:%M:%S") if ack_wib_dt else "-"
+
+            # resolved_at (WIB)
+            resolved_wib_dt = item.resolved_at
+            resolved_wib_str = resolved_wib_dt.strftime("%Y-%m-%d %H:%M:%S") if resolved_wib_dt else "-"
+
+            # TTA (Time to Acknowledge)
+            tta_str = "-"
+            if ack_wib_dt and created_wib_dt:
+                tta_sec = (ack_wib_dt - created_wib_dt).total_seconds()
+                tta_str = format_duration(tta_sec)
+
+            # TTR (Time to Resolve)
+            ttr_str = "-"
+            if resolved_wib_dt and created_wib_dt:
+                ttr_sec = (resolved_wib_dt - created_wib_dt).total_seconds()
+                ttr_str = format_duration(ttr_sec)
 
             writer.writerow([
-                item.id,
+                f"#INC-{item.id}",
                 service_name,
                 ip_address,
                 area,
                 item.severity,
                 item.status,
-                item.created_at.strftime("%Y-%m-%d %H:%M:%S") if item.created_at else "",
-                item.ack_by or "",
-                item.ack_message or "",
-                item.ack_at.strftime("%Y-%m-%d %H:%M:%S") if item.ack_at else ""
+                created_wib_str,
+                item.ack_by or "-",
+                item.ack_message or "-",
+                ack_wib_str,
+                tta_str,
+                resolved_wib_str,
+                ttr_str
             ])
             yield output.getvalue()
             output.seek(0)
             output.truncate(0)
 
+    filename = f"Pertamina_NetShield_Report_{report_date_str}.csv"
     headers = {
-        "Content-Disposition": "attachment; filename=netshield_incident_logs.csv"
+        "Content-Disposition": f'attachment; filename="{filename}"'
     }
 
-    return StreamingResponse(iter_csv(), media_type="text/csv", headers=headers)
+    return StreamingResponse(iter_csv(), media_type="text/csv; charset=utf-8", headers=headers)
+

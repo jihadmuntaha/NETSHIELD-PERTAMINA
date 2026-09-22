@@ -13,10 +13,14 @@
         <p class="text-sm text-slate-400">Pengelolaan Laporan Gangguan &amp; Klaim Tindak Lanjut Perbaikan (ACK) Pertamina NetShield</p>
     </div>
     <div class="flex items-center gap-3">
-        <a href="/api/incidents/export-csv" class="px-4 py-2 text-sm font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30 transition flex items-center gap-2">
+        <div class="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5">
+            <i class="fa-solid fa-calendar-days text-slate-400 text-xs"></i>
+            <input type="date" id="export-date-picker" class="bg-transparent text-xs text-white focus:outline-none cursor-pointer">
+        </div>
+        <button onclick="downloadCSVReport()" class="px-4 py-2 text-sm font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30 transition flex items-center gap-2">
             <i class="fa-solid fa-file-csv"></i>
             <span>Export CSV Report</span>
-        </a>
+        </button>
     </div>
 </div>
 
@@ -277,6 +281,25 @@
                 }
             }
         } catch (ex) { console.error('Incidents polling error:', ex); }
+    }
+
+    // Set default date picker ke hari ini (YYYY-MM-DD)
+    document.addEventListener('DOMContentLoaded', () => {
+        const datePicker = document.getElementById('export-date-picker');
+        if (datePicker) {
+            const today = new Date().toISOString().split('T')[0];
+            datePicker.value = today;
+        }
+    });
+
+    function downloadCSVReport() {
+        const datePicker = document.getElementById('export-date-picker');
+        const selectedDate = datePicker ? datePicker.value : '';
+        let url = '/api/incidents/export-csv';
+        if (selectedDate) {
+            url += `?target_date=${selectedDate}`;
+        }
+        window.location.href = url;
     }
 
     // Jalankan polling awal dan set interval 3 detik

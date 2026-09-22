@@ -1,4 +1,5 @@
 import re
+import sys
 import asyncio
 import logging
 from typing import Optional, Dict, Any
@@ -15,10 +16,9 @@ logger = logging.getLogger("netshield_webhook")
 
 router = APIRouter(prefix="/api/v1/webhook", tags=["Webhook"])
 
-# Regex pattern untuk perintah ACK (case-insensitive & fleksibel):
-# Format yang didukung: "ack 104 catatan", "ack#104 catatan", "ack 104", "ACK #104: catatan"
-ACK_REGEX = re.compile(r"(?i)^\s*ack\s*#?\s*(\d+)[\s:]*(.*)?$", re.DOTALL)
-
+# Flexible ACK Regex Pattern (Case-Insensitive):
+# Matches "ACK 73 Sedang penanganan di lokasi", "ack#73 OTW", "ack 73", "ACK #73: Catatan", etc.
+ACK_REGEX = re.compile(r"(?i)^\s*(?:ACK|ack)[#\s]*(\d+)(?:[\s:]+(.*))?$", re.DOTALL)
 
 
 async def _extract_payload_data(
@@ -26,28 +26,44 @@ async def _extract_payload_data(
     form_sender: Optional[str],
     form_message: Optional[str],
     form_name: Optional[str]
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, Dict[str, Any]]:
     """
-    Ekstrak sender, message, dan name dari Form-Data maupun JSON payload Fonnte.
+    Ekstrak sender, message, name, dan raw payload dari JSON payload, Form-Data, maupun Query Params Fonnte.
     """
-    json_body: Dict[str, Any] = {}
+    raw_payload: Dict[str, Any] = {}
+
+    # 1. Parse JSON Body
     if request.headers.get("content-type", "").startswith("application/json"):
         try:
             parsed = await request.json()
             if isinstance(parsed, dict):
-                json_body = parsed
+                raw_payload.update(parsed)
+                if isinstance(parsed.get("data"), dict):
+                    raw_payload.update(parsed["data"])
         except Exception:
-            json_body = {}
+            pass
 
-    form_data: Dict[str, Any] = {}
+    # 2. Parse Form Data
     try:
         form = await request.form()
         form_data = dict(form)
+        if form_data:
+            raw_payload.update(form_data)
     except Exception:
-        form_data = {}
+        pass
+
+    # 3. Parse Query Params
+    try:
+        query = dict(request.query_params)
+        if query:
+            raw_payload.update(query)
+    except Exception:
+        pass
 
     def _to_str(val: Any) -> str:
-        return val if isinstance(val, str) else ""
+        if isinstance(val, str):
+            return val.strip()
+        return ""
 
     s_form = _to_str(form_sender)
     m_form = _to_str(form_message)
@@ -55,41 +71,34 @@ async def _extract_payload_data(
 
     sender_val = (
         s_form
-        or form_data.get("sender")
-        or form_data.get("from")
-        or form_data.get("phone")
-        or json_body.get("sender")
-        or json_body.get("from")
-        or json_body.get("phone")
-        or ""
+        or _to_str(raw_payload.get("sender"))
+        or _to_str(raw_payload.get("from"))
+        or _to_str(raw_payload.get("phone"))
+        or _to_str(raw_payload.get("member"))
+        or _to_str(raw_payload.get("target"))
     )
 
     message_val = (
         m_form
-        or form_data.get("message")
-        or form_data.get("text")
-        or form_data.get("body")
-        or json_body.get("message")
-        or json_body.get("text")
-        or json_body.get("body")
-        or ""
+        or _to_str(raw_payload.get("message"))
+        or _to_str(raw_payload.get("text"))
+        or _to_str(raw_payload.get("body"))
+        or _to_str(raw_payload.get("pesan"))
     )
 
     name_val = (
         n_form
-        or form_data.get("name")
-        or form_data.get("pushName")
-        or form_data.get("contact")
-        or json_body.get("name")
-        or json_body.get("pushName")
-        or json_body.get("contact")
-        or ""
+        or _to_str(raw_payload.get("name"))
+        or _to_str(raw_payload.get("pushName"))
+        or _to_str(raw_payload.get("contact"))
+        or _to_str(raw_payload.get("username"))
     )
 
-    return str(sender_val).strip(), str(message_val).strip(), str(name_val).strip()
+    return sender_val, message_val, name_val, raw_payload
 
 
-
+@router.get("/whatsapp")
+@router.get("/whatsapp/fonnte")
 @router.post("/whatsapp")
 @router.post("/whatsapp/fonnte")
 async def whatsapp_webhook(
@@ -104,9 +113,11 @@ async def whatsapp_webhook(
     Selalu mengembalikan {"status": "ok"} HTTP 200 agar gateway Fonnte tidak melakukan retry.
     """
     try:
-        # 1. Pengambilan Payload Fonnte (JSON & Form-Data)
-        sender_val, message_val, name_val = await _extract_payload_data(request, sender, message, name)
-
+        # 1. Parsing & Logging Payload Fonnte di baris pertama
+        sender_val, message_val, name_val, raw_payload = await _extract_payload_data(request, sender, message, name)
+        
+        log_payload_str = raw_payload if raw_payload else f"sender={sender_val}, message={message_val}, name={name_val}"
+        print(f"[WEBHOOK INCOMING] Payload: {log_payload_str}")
         logger.info(
             "[WA WEBHOOK] Pesan masuk dari '%s' (%s): '%s'",
             name_val or "Unknown",
@@ -115,18 +126,21 @@ async def whatsapp_webhook(
         )
 
         if not message_val:
+            print("[WEBHOOK IGNORED] Pesan kosong (empty message).")
             return {"status": "ok"}
 
         # 2. Robust Regex Parsing untuk Perintah ACK
-        match = ACK_REGEX.match(message_val)
+        match = ACK_REGEX.search(message_val)
         if not match:
-            logger.info("[WA WEBHOOK] Pesan tidak memenuhi format ACK insiden. Abaikan.")
+            print(f"[WEBHOOK REJECT] Pesan '{message_val}' tidak memenuhi pola/format ACK insiden.")
+            logger.info("[WA WEBHOOK] Pesan '%s' tidak memenuhi format ACK insiden. Abaikan.", message_val)
             return {"status": "ok"}
 
         incident_id_str, raw_note = match.groups()
         try:
             incident_id = int(incident_id_str)
         except ValueError:
+            print(f"[WEBHOOK REJECT] ID insiden '{incident_id_str}' tidak valid.")
             return {"status": "ok"}
 
         if raw_note:
@@ -135,7 +149,9 @@ async def whatsapp_webhook(
         else:
             note = "Dikonfirmasi via WhatsApp"
 
-        # 3. Validasi & Mutasi Database (SessionLocal baru)
+        print(f"[WEBHOOK ACK MATCH] ID Insiden: #{incident_id}, Catatan: '{note}', Sender: '{sender_val}' ({name_val})")
+
+        # 3. Validasi Tiket Insiden & Mutasi Database
         db = SessionLocal()
         try:
             incident = (
@@ -148,14 +164,16 @@ async def whatsapp_webhook(
             # Tentukan identitas PIC (name or sender)
             acknowledged_by = name_val if name_val else (sender_val if sender_val else "Teknisi WA")
 
-
-
             # Kasus A: Insiden tidak ditemukan
             if not incident:
                 reply_a = f"❌ Insiden #{incident_id} tidak ditemukan di sistem."
+                print(f"[WEBHOOK REJECT] Tiket insiden #{incident_id} tidak ditemukan di database.")
                 logger.warning("[WA WEBHOOK KASUS A] Insiden #%d tidak ditemukan.", incident_id)
                 if sender_val:
-                    asyncio.create_task(send_wa_reply(sender_val, reply_a))
+                    try:
+                        await send_wa_reply(sender_val, reply_a)
+                    except Exception as err:
+                        print(f"[WEBHOOK REPLY ERROR] Gagal mengirimi balasan ke {sender_val}: {err}")
                 return {"status": "ok"}
 
             # Kasus B: Insiden sudah pernah di-ACK sebelumnya
@@ -168,17 +186,25 @@ async def whatsapp_webhook(
                     ack_at_str = "sebelumnya"
 
                 reply_b = f"⚠️ Insiden #{incident_id} sudah di-ACK sebelumnya oleh {ack_by_str} pada {ack_at_str}."
+                print(f"[WEBHOOK REJECT] Insiden #{incident_id} sudah di-ACK sebelumnya oleh {ack_by_str}.")
                 logger.info("[WA WEBHOOK KASUS B] Insiden #%d sudah di-ACK oleh %s.", incident_id, ack_by_str)
                 if sender_val:
-                    asyncio.create_task(send_wa_reply(sender_val, reply_b))
+                    try:
+                        await send_wa_reply(sender_val, reply_b)
+                    except Exception as err:
+                        print(f"[WEBHOOK REPLY ERROR] Gagal mengirimi balasan ke {sender_val}: {err}")
                 return {"status": "ok"}
 
             # Kasus C: Insiden sudah RESOLVED (sembuh)
             if incident.status == "RESOLVED":
                 reply_c = f"ℹ️ Insiden #{incident_id} sudah terselesaikan (RESOLVED)."
+                print(f"[WEBHOOK REJECT] Insiden #{incident_id} sudah terselesaikan (RESOLVED).")
                 logger.info("[WA WEBHOOK KASUS C] Insiden #%d sudah RESOLVED.", incident_id)
                 if sender_val:
-                    asyncio.create_task(send_wa_reply(sender_val, reply_c))
+                    try:
+                        await send_wa_reply(sender_val, reply_c)
+                    except Exception as err:
+                        print(f"[WEBHOOK REPLY ERROR] Gagal mengirimi balasan ke {sender_val}: {err}")
                 return {"status": "ok"}
 
             # Kasus D: Valid ACK -> Mutasi Record
@@ -189,8 +215,9 @@ async def whatsapp_webhook(
             incident.is_acknowledged = True
             incident.acknowledged_by = acknowledged_by
             incident.acknowledged_at = now_wib
+            incident.ack_by = acknowledged_by
+            incident.ack_at = now_wib
             incident.ack_message = note
-
 
             client_ip = request.client.host if request.client else "127.0.0.1"
             audit = AuditLog(
@@ -204,6 +231,7 @@ async def whatsapp_webhook(
             db.commit()
             db.refresh(incident)
 
+            print(f"[WEBHOOK SUCCESS] Insiden #{incident_id} berhasil di-ACK oleh '{acknowledged_by}'. Catatan: '{note}'")
             logger.info(
                 "[WA WEBHOOK KASUS D SUCCESS] Insiden #%d berhasil di-ACK oleh %s.",
                 incident_id,
@@ -231,7 +259,13 @@ async def whatsapp_webhook(
             )
 
             if sender_val:
-                asyncio.create_task(send_wa_reply(sender_val, confirm_msg))
+                print(f"[WEBHOOK REPLY] Mengirimkan balasan konfirmasi WA ke {sender_val}...")
+                try:
+                    await send_wa_reply(sender_val, confirm_msg)
+                except Exception as err:
+                    print(f"[WEBHOOK REPLY ERROR] Gagal mengirimi konfirmasi WA ke {sender_val}: {err}")
+            else:
+                print("[WEBHOOK WARNING] sender_val kosong, tidak ada nomor untuk membalas WA.")
 
             return {"status": "ok"}
 
@@ -239,6 +273,6 @@ async def whatsapp_webhook(
             db.close()
 
     except Exception as exc:
+        print(f"[WEBHOOK ERROR] Error tidak terduga: {exc}")
         logger.error("[WA WEBHOOK ERROR] Error tidak terduga: %s", exc, exc_info=True)
-        # 5. Proteksi Respon Endpoint (Selalu HTTP 200 status: ok)
         return {"status": "ok"}
