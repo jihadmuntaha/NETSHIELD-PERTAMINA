@@ -40,7 +40,9 @@ class IncidentLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     service_id = Column(Integer, ForeignKey("monitored_services.id"), nullable=False)
-    severity = Column(String(20), nullable=False)  # "WARNING", "HIGH", "DISASTER"
+    severity = Column(String(20), nullable=False)  # "WARNING", "CRITICAL", "HIGH", "DISASTER"
+    title = Column(String(255), nullable=True)
+    latency_ms = Column(Float, nullable=True)
     status = Column(String(20), default="NEW", nullable=False)  # "NEW", "ACKNOWLEDGED", "RESOLVED"
     ack_by = Column(String(100), nullable=True)
     ack_message = Column(Text, nullable=True)

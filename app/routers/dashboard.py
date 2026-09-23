@@ -214,6 +214,8 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
             "service_name": inc.service.name if inc.service else "N/A",
             "ip_address": inc.service.ip_address if inc.service else "N/A",
             "severity": inc.severity,
+            "title": getattr(inc, "title", None) or ("Device DOWN" if inc.severity == "CRITICAL" else f"{inc.severity} Incident"),
+            "latency_ms": inc.latency_ms,
             "status": inc.status,
             "ack_by": inc.ack_by,
             "ack_message": inc.ack_message,

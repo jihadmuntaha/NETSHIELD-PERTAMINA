@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.database import engine, Base
+from app.database import engine, Base, run_migrations
 from app.routers import dashboard, devices, incidents, webhook
 from app.routers.devices import audit_router
 
@@ -42,6 +42,7 @@ async def on_startup():
     """Database initialization, seed check, and background polling task launch."""
     logger.info("Initializing Pertamina NetShield app...")
     Base.metadata.create_all(bind=engine)
+    run_migrations()
     try:
         seed_data()
     except Exception as e:

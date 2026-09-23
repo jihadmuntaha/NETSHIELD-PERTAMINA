@@ -50,9 +50,10 @@
             </select>
             <select id="filter-severity" onchange="filterIncidentsTable()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
                 <option value="ALL">Semua Severity</option>
+                <option value="CRITICAL">🚨 CRITICAL</option>
+                <option value="WARNING">⚠️ WARNING</option>
                 <option value="DISASTER">🔥 DISASTER</option>
-                <option value="HIGH">⚠️ HIGH</option>
-                <option value="WARNING">⚡ WARNING</option>
+                <option value="HIGH">⚡ HIGH</option>
             </select>
         </div>
     </div>
@@ -64,6 +65,7 @@
                     <th class="py-3 px-4 font-semibold">ID</th>
                     <th class="py-3 px-4 font-semibold">Perangkat Terdampak</th>
                     <th class="py-3 px-4 font-semibold">Severity</th>
+                    <th class="py-3 px-4 font-semibold">Latensi (RTT)</th>
                     <th class="py-3 px-4 font-semibold">Waktu Kejadian</th>
                     <th class="py-3 px-4 font-semibold">Status</th>
                     <th class="py-3 px-4 font-semibold">Teknisi / Catatan ACK</th>
@@ -72,7 +74,7 @@
             </thead>
             <tbody id="incidents-tbody" class="divide-y divide-slate-800/60 font-medium">
                 {% if not incidents %}
-                <tr><td colspan="7" class="py-8 text-center text-slate-500 italic">Tidak ada log insiden tercatat saat ini. Seluruh sistem beroperasi normal.</td></tr>
+                <tr><td colspan="8" class="py-8 text-center text-slate-500 italic">Tidak ada log insiden tercatat saat ini. Seluruh sistem beroperasi normal.</td></tr>
                 {% endif %}
                 {% for inc in incidents %}
                 <tr class="hover:bg-slate-800/40 transition inc-row" data-status="{{ inc.status }}" data-severity="{{ inc.severity }}">
@@ -82,12 +84,23 @@
                         <div class="text-xs text-slate-400"><code>{{ inc.service.ip_address if inc.service else '-' }}</code></div>
                     </td>
                     <td class="py-3.5 px-4">
-                        {% if inc.severity == 'DISASTER' %}
-                        <span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🔥 DISASTER</span>
+                        {% if inc.severity == 'CRITICAL' %}
+                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🚨 CRITICAL</span>
+                        {% elif inc.severity == 'WARNING' %}
+                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-amber-400 text-slate-900 shadow-md">⚠️ WARNING</span>
+                        {% elif inc.severity == 'DISASTER' %}
+                        <span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-700 text-white shadow-lg shadow-red-700/40">🔥 DISASTER</span>
                         {% elif inc.severity == 'HIGH' %}
-                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚠️ HIGH</span>
+                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚡ HIGH</span>
                         {% else %}
-                        <span class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">⚡ WARNING</span>
+                        <span class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">{{ inc.severity }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-3.5 px-4 text-xs font-mono text-slate-300">
+                        {% if inc.latency_ms is not none %}
+                        <span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 font-bold border border-amber-500/20">{{ inc.latency_ms }} ms</span>
+                        {% else %}
+                        <span class="text-slate-500">-</span>
                         {% endif %}
                     </td>
                     <td class="py-3.5 px-4 text-xs text-slate-400 font-mono">{{ inc.created_at.strftime('%Y-%m-%d %H:%M:%S') if inc.created_at else '-' }}</td>
@@ -232,13 +245,23 @@
             const incidentsTbody = document.getElementById('incidents-tbody');
             if (incidentsTbody && data) {
                 if (data.length === 0) {
-                    incidentsTbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-500 italic">Tidak ada log insiden tercatat saat ini. Seluruh sistem beroperasi normal.</td></tr>`;
+                    incidentsTbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-slate-500 italic">Tidak ada log insiden tercatat saat ini. Seluruh sistem beroperasi normal.</td></tr>`;
                 } else {
                     let html = '';
                     data.forEach(inc => {
-                        let sevBadge = `<span class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">⚡ WARNING</span>`;
-                        if (inc.severity === 'DISASTER') sevBadge = `<span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🔥 DISASTER</span>`;
-                        else if (inc.severity === 'HIGH') sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚠️ HIGH</span>`;
+                        let sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-amber-400 text-slate-900 shadow-md">⚠️ WARNING</span>`;
+                        if (inc.severity === 'CRITICAL') {
+                            sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🚨 CRITICAL</span>`;
+                        } else if (inc.severity === 'DISASTER') {
+                            sevBadge = `<span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-700 text-white shadow-lg shadow-red-700/40">🔥 DISASTER</span>`;
+                        } else if (inc.severity === 'HIGH') {
+                            sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚡ HIGH</span>`;
+                        }
+
+                        let latCol = `<span class="text-slate-500">-</span>`;
+                        if (inc.latency_ms !== null && inc.latency_ms !== undefined) {
+                            latCol = `<span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 font-bold border border-amber-500/20">${inc.latency_ms} ms</span>`;
+                        }
 
                         let stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">RESOLVED</span>`;
                         let claimCol = `<span class="text-xs text-slate-500 font-semibold"><i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i>Resolved</span>`;
@@ -270,6 +293,7 @@
                                 <div class="text-xs text-slate-400"><code>${srvIp}</code></div>
                             </td>
                             <td class="py-3.5 px-4">${sevBadge}</td>
+                            <td class="py-3.5 px-4 font-mono text-xs">${latCol}</td>
                             <td class="py-3.5 px-4 text-xs text-slate-400 font-mono">${dtStr}</td>
                             <td class="py-3.5 px-4">${stBadge}</td>
                             <td class="py-3.5 px-4 text-xs">${ackCol}</td>

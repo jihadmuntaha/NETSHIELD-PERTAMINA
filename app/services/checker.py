@@ -92,102 +92,21 @@ async def start_polling() -> None:
         await asyncio.sleep(POLL_INTERVAL_SEC)
 
 
+from app.services.prom_poller import evaluate_device_status_and_latency
+
+
 # ---------------------------------------------------------------------------
 # _check_device  — evaluasi satu perangkat dengan Natural Socket Probing
 # ---------------------------------------------------------------------------
 async def _check_device(dev: MonitoredService, db) -> None:
     """
-    Probe satu perangkat dengan TCP socket probing, evaluasi transisi status,
+    Probe satu perangkat dengan TCP socket probing, evaluasi status & RTT threshold,
     dan update database secara presisi.
-
-    Console Logging Format:
-      [NATURAL-PROBE] 127.0.0.1:8000 -> CONNECTED (1.4 ms) | State: UP
-      [NATURAL-PROBE] 10.4.12.1:80 -> TIMEOUT | State: DOWN
     """
     is_up, latency, status_lbl, target_str = await run_natural_probe(dev.ip_address)
+    status_val = 1 if is_up else 0
+    rtt_ms = latency if is_up else None
 
-    area_str = dev.area.value if hasattr(dev.area, "value") else str(dev.area)
-    dtype_str = (
-        dev.device_type.value if hasattr(dev.device_type, "value") else str(dev.device_type)
-    )
-    prev_status = dev.status   # "UP" atau "DOWN"
+    print(f"[NATURAL-PROBE] {target_str} -> {status_lbl} ({latency:.1f} ms) | State: {'UP' if is_up else 'DOWN'}")
+    await evaluate_device_status_and_latency(db, dev, status_val, rtt_ms)
 
-    # ===================================================================== UP
-    if is_up:
-        dev.response_time_ms = latency
-        dev.last_check = _now_wib()
-
-        print(f"[NATURAL-PROBE] {target_str} -> {status_lbl} ({latency:.1f} ms) | State: UP")
-
-        if prev_status == "DOWN":
-            # ------------------------------------------------ DOWN → UP (RECOVERY)
-            dev.status = "UP"
-
-            open_incidents = (
-                db.query(IncidentLog)
-                .filter(
-                    IncidentLog.service_id == dev.id,
-                    IncidentLog.status.in_(["NEW", "ACKNOWLEDGED"]),
-                )
-                .all()
-            )
-            resolved_at = _now_wib()
-            for inc in open_incidents:
-                inc.status = "RESOLVED"
-                inc.resolved_at = resolved_at
-
-            print(
-                f"[RECOVERY DETECTED] {dev.name} ({target_str}) is now UP! "
-                f"({latency:.1f} ms, {len(open_incidents)} insiden di-resolve)"
-            )
-
-            last_inc = open_incidents[-1] if open_incidents else None
-            await send_recovery_alert(
-                device=dev,
-                incident=last_inc,
-                latency=latency,
-            )
-
-        else:
-            # ------------------------------------------------ UP → UP (steady)
-            dev.status = "UP"
-
-    # =================================================================== DOWN
-    else:
-        dev.response_time_ms = 0.0
-        dev.last_check       = _now_wib()
-
-        print(f"[NATURAL-PROBE] {target_str} -> {status_lbl} | State: DOWN")
-
-        if prev_status == "UP":
-            # ----------------------------------------- UP → DOWN (INCIDENT)
-            dev.status = "DOWN"
-
-            severity = (
-                "DISASTER"
-                if area_str == AreaZona.ZONA_4.value or "Zona 4" in area_str
-                else "HIGH"
-            )
-
-            new_incident = IncidentLog(
-                service_id=dev.id,
-                severity=severity,
-                status="NEW",
-                created_at=_now_wib(),
-            )
-            db.add(new_incident)
-            db.flush()
-
-            print(
-                f"[INCIDENT CREATED] {dev.name} ({target_str}) is now DOWN! "
-                f"severity={severity}"
-            )
-
-            await send_incident_alert(
-                device=dev,
-                incident=new_incident,
-            )
-
-        else:
-            # Sudah DOWN dari sebelumnya — jaga status, jangan buat insiden duplikat
-            dev.status = "DOWN"

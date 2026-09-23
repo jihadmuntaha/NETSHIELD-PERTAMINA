@@ -239,18 +239,16 @@
                             <code>{{ inc.service.ip_address if inc.service else '-' }}</code></div>
                     </td>
                     <td class="py-3.5 px-4">
-                        {% if inc.severity == 'DISASTER' %}
-                        <span
-                            class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🔥
-                            DISASTER</span>
+                        {% if inc.severity == 'CRITICAL' %}
+                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🚨 CRITICAL</span>
+                        {% elif inc.severity == 'WARNING' %}
+                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-amber-400 text-slate-900 shadow-md">⚠️ WARNING</span>
+                        {% elif inc.severity == 'DISASTER' %}
+                        <span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-700 text-white shadow-lg shadow-red-700/40">🔥 DISASTER</span>
                         {% elif inc.severity == 'HIGH' %}
-                        <span
-                            class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚠️
-                            HIGH</span>
+                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚡ HIGH</span>
                         {% else %}
-                        <span
-                            class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">⚡
-                            WARNING</span>
+                        <span class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">{{ inc.severity }}</span>
                         {% endif %}
                     </td>
                     <td class="py-3.5 px-4 text-xs text-slate-400 font-mono">{{ inc.created_at.strftime('%Y-%m-%d
@@ -466,9 +464,14 @@
                         } else {
                             let incHtml = '';
                             activeList.forEach(inc => {
-                                let sevBadge = `<span class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">⚡ WARNING</span>`;
-                                if (inc.severity === 'DISASTER') sevBadge = `<span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🔥 DISASTER</span>`;
-                                else if (inc.severity === 'HIGH') sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚠️ HIGH</span>`;
+                                let sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-amber-400 text-slate-900 shadow-md">⚠️ WARNING</span>`;
+                                if (inc.severity === 'CRITICAL') {
+                                    sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🚨 CRITICAL</span>`;
+                                } else if (inc.severity === 'DISASTER') {
+                                    sevBadge = `<span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-700 text-white shadow-lg shadow-red-700/40">🔥 DISASTER</span>`;
+                                } else if (inc.severity === 'HIGH') {
+                                    sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚡ HIGH</span>`;
+                                }
 
                                 let stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">RESOLVED</span>`;
                                 if (inc.status === 'NEW' || (!inc.is_acknowledged && inc.status !== 'ACKNOWLEDGED')) {

@@ -60,13 +60,32 @@ def _format_incident_message(device, incident) -> str:
     zona_name = device.area.value if hasattr(device.area, "value") else str(device.area)
     device_name = device.name
     ip_address = device.ip_address
-    severity = getattr(incident, "severity", "HIGH") or "HIGH"
+    severity = getattr(incident, "severity", "CRITICAL") or "CRITICAL"
     incident_id = getattr(incident, "id", None) or "N/A"
     created_at = getattr(incident, "created_at", None)
     timestamp_wib = _get_wib_timestamp(created_at)
+    lat_ms = getattr(incident, "latency_ms", None) or getattr(device, "response_time_ms", None)
+
+    if severity == "WARNING":
+        lat_str = f"{lat_ms} ms" if lat_ms is not None else ">200 ms"
+        return (
+            "⚠️ *[WARNING] PERTAMINA NETSHIELD - DEGRADASI LATENSI* ⚠️\n"
+            f"*ID Insiden:* #{incident_id}\n"
+            "*Lokasi:* Fuel Terminal Pengapon\n"
+            f"*Zona:* {zona_name}\n"
+            f"*Perangkat:* {device_name} ({ip_address})\n"
+            "*Status:* DEGRADED (High Latency)\n"
+            f"*Severity:* WARNING\n"
+            f"*Latensi RTT:* {lat_str} (Ambang batas > 200ms)\n"
+            f"*Waktu Kejadian:* {timestamp_wib}\n\n"
+            f"📱 *KLAIM CEPAT VIA WA:* Balas pesan ini dengan format:\n"
+            f"`ACK {incident_id} <catatan>` (Contoh: `ACK {incident_id} Pengecekan jalur jaringan`)\n\n"
+            "_Peringatan degradasi performa: perangkat merespons lambat melebihi 200ms._\n"
+            "Link Dashboard: http://localhost:5000/incidents"
+        )
 
     return (
-        "🚨 *PERTAMINA NETSHIELD - NETWORK ALERT* 🚨\n"
+        "🚨 *[CRITICAL] PERTAMINA NETSHIELD - NETWORK DOWN ALERT* 🚨\n"
         f"*ID Insiden:* #{incident_id}\n"
         "*Lokasi:* Fuel Terminal Pengapon\n"
         f"*Zona:* {zona_name}\n"

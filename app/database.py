@@ -18,6 +18,25 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+from sqlalchemy import text
+
+
+def run_migrations():
+    """Ensure missing columns in incident_logs table exist in SQLite database."""
+    try:
+        with engine.connect() as conn:
+            res = conn.execute(text("PRAGMA table_info(incident_logs)"))
+            columns = [row[1] for row in res.fetchall()]
+            if columns:
+                if "latency_ms" not in columns:
+                    conn.execute(text("ALTER TABLE incident_logs ADD COLUMN latency_ms FLOAT"))
+                if "title" not in columns:
+                    conn.execute(text("ALTER TABLE incident_logs ADD COLUMN title VARCHAR(255)"))
+                conn.commit()
+    except Exception as exc:
+        print(f"[MIGRATION ERROR] {exc}")
+
+
 def get_db():
     """Dependency generator for database sessions in FastAPI routes."""
     db = SessionLocal()
@@ -25,3 +44,4 @@ def get_db():
         yield db
     finally:
         db.close()
+

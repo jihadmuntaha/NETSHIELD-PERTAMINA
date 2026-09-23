@@ -67,6 +67,8 @@ def get_active_incidents(db: Session = Depends(get_db)):
             "ip_address": ip_address,
             "zone": zone,
             "severity": inc.severity,
+            "title": getattr(inc, "title", None) or ("Device DOWN" if inc.severity == "CRITICAL" else f"{inc.severity} Incident"),
+            "latency_ms": inc.latency_ms,
             "status": inc.status,
             "is_acknowledged": is_ack,
             "acknowledged_by": ack_by_name,
@@ -178,6 +180,7 @@ def export_incidents_csv(
             "IP Address",
             "Area / Zona",
             "Severity",
+            "Latency (ms)",
             "Status",
             "Waktu Kejadian (WIB)",
             "Teknisi (ACK By)",
@@ -225,12 +228,15 @@ def export_incidents_csv(
                 ttr_sec = (resolved_wib_dt - created_wib_dt).total_seconds()
                 ttr_str = format_duration(ttr_sec)
 
+            latency_str = f"{item.latency_ms} ms" if item.latency_ms is not None else "-"
+
             writer.writerow([
                 f"#INC-{item.id}",
                 service_name,
                 ip_address,
                 area,
                 item.severity,
+                latency_str,
                 item.status,
                 created_wib_str,
                 item.ack_by or "-",

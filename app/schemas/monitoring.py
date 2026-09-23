@@ -43,7 +43,9 @@ class ServiceResponse(ServiceBase):
 # ==========================================
 class IncidentBase(BaseModel):
     service_id: int
-    severity: str  # "WARNING", "HIGH", "DISASTER"
+    severity: str  # "WARNING", "CRITICAL", "HIGH", "DISASTER"
+    title: Optional[str] = None
+    latency_ms: Optional[float] = None
     status: str = "NEW"  # "NEW", "ACKNOWLEDGED", "RESOLVED"
     ack_by: Optional[str] = None
     ack_message: Optional[str] = None
@@ -52,6 +54,8 @@ class IncidentBase(BaseModel):
 class IncidentCreate(BaseModel):
     service_id: int
     severity: str
+    title: Optional[str] = None
+    latency_ms: Optional[float] = None
     status: str = "NEW"
 
 
