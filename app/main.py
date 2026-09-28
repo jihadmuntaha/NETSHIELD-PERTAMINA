@@ -6,12 +6,13 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import engine, Base, run_migrations
-from app.routers import dashboard, devices, incidents, webhook
+from app.routers import dashboard, devices, incidents, webhook, topology
 from app.routers.devices import audit_router
 
 from app.services.checker import start_polling
 from app.services.prom_poller import monitor_prometheus_targets
 from seed import seed_data
+from seed_topology import seed_topology
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("netshield_main")
@@ -34,6 +35,8 @@ app.include_router(incidents.router)
 app.include_router(incidents.v1_router)
 app.include_router(webhook.router)
 app.include_router(audit_router)
+app.include_router(topology.router)
+app.include_router(topology.alias_router)
 
 
 
@@ -45,6 +48,7 @@ async def on_startup():
     run_migrations()
     try:
         seed_data()
+        seed_topology()
     except Exception as e:
         logger.info("Database seeding status: %s", e)
 

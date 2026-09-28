@@ -248,7 +248,14 @@ async def send_incident_alert(device, incident) -> bool:
     """
     Kirim notifikasi WhatsApp alert (DOWN) via Fonnte API.
     Format pesan merah untuk kondisi DOWN.
+    Alert WA HANYA dikirim jika severity bernilai CRITICAL / DISASTER / HIGH.
+    Jika severity WARNING, skip pengiriman WA (cegah Alert Fatigue).
     """
+    severity = getattr(incident, "severity", "CRITICAL") or "CRITICAL"
+    if severity == "WARNING":
+        logger.info("[FONNTE WA ALERT SKIP] Alert WA di-skip untuk insiden WARNING pada %s (%s) (Alert Fatigue Prevention).", getattr(device, "name", "Device"), getattr(device, "ip_address", ""))
+        return False
+
     dev_key = str(getattr(device, "id", None) or getattr(device, "ip_address", "unknown"))
     if _is_alert_cooldown_active(dev_key, "DOWN", cooldown_seconds=60):
         logger.warning("[FONNTE COOLDOWN] Notifikasi DOWN untuk perangkat %s diabaikan (cooldown 60s).", dev_key)
@@ -263,7 +270,13 @@ async def send_recovery_alert(device, incident=None, latency: float = 0.0) -> bo
     """
     Kirim notifikasi WhatsApp recovery alert (UP) via Fonnte API.
     Format pesan hijau untuk kondisi RECOVERY (UP).
+    Notifikasi RECOVERY WA HANYA dikirim jika insiden sebelumnya berstatus CRITICAL / DISASTER / HIGH.
+    Jika insiden sebelumnya hanya WARNING, skip pengiriman WA.
     """
+    if incident and getattr(incident, "severity", None) == "WARNING":
+        logger.info("[FONNTE WA RECOVERY SKIP] Notifikasi WA Recovery di-skip pada %s (%s) karena tiket insiden sebelumnya berstatus WARNING.", getattr(device, "name", "Device"), getattr(device, "ip_address", ""))
+        return False
+
     dev_key = str(getattr(device, "id", None) or getattr(device, "ip_address", "unknown"))
     if _is_alert_cooldown_active(dev_key, "UP", cooldown_seconds=60):
         logger.warning("[FONNTE COOLDOWN] Notifikasi UP untuk perangkat %s diabaikan (cooldown 60s).", dev_key)

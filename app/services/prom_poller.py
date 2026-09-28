@@ -167,10 +167,10 @@ async def evaluate_device_status_and_latency(db, service: MonitoredService, stat
             db.refresh(new_inc)
 
             logger.info(
-                "[HIGH LATENCY WARNING] Perangkat %s (%s) merespons %s ms (>200ms). Tiket WARNING #%d dibuat.",
+                "[HIGH LATENCY WARNING] Perangkat %s (%s) merespons %s ms (>200ms). Tiket WARNING #%d dibuat (Pesan WA di-skip).",
                 service.name, service.ip_address, rtt_ms, new_inc.id
             )
-            await send_incident_alert(device=service, incident=new_inc)
+            # Skip pengiriman pesan WhatsApp via Fonnte untuk status WARNING (Alert Fatigue Prevention)
         else:
             active_warning.latency_ms = rtt_ms
             active_warning.title = f"High Latency Detected ({rtt_ms} ms)"
@@ -196,17 +196,26 @@ async def evaluate_device_status_and_latency(db, service: MonitoredService, stat
 
         if active_incidents:
             resolved_dt = now
+            # Cek apakah ada insiden aktif yang berstatus CRITICAL / DISASTER / HIGH
+            critical_inc = next((inc for inc in reversed(active_incidents) if getattr(inc, "severity", "") in ["CRITICAL", "DISASTER", "HIGH"]), None)
+
             for inc in active_incidents:
                 inc.status = "RESOLVED"
                 inc.resolved_at = resolved_dt
 
             db.commit()
-            last_inc = active_incidents[-1]
-            logger.info(
-                "[AUTO-RECOVERY] Perangkat %s (%s) pulih normal (%s ms). Insiden di-resolve.",
-                service.name, service.ip_address, rtt_ms if rtt_ms is not None else 0.0
-            )
-            await send_recovery_alert(device=service, incident=last_inc, latency=rtt_ms or service.response_time_ms or 0.0)
+
+            if critical_inc:
+                logger.info(
+                    "[AUTO-RECOVERY CRITICAL] Perangkat %s (%s) pulih normal (%s ms). Tiket CRITICAL #%d di-resolve -> Kirim WA Recovery.",
+                    service.name, service.ip_address, rtt_ms if rtt_ms is not None else 0.0, critical_inc.id
+                )
+                await send_recovery_alert(device=service, incident=critical_inc, latency=rtt_ms or service.response_time_ms or 0.0)
+            else:
+                logger.info(
+                    "[AUTO-RECOVERY WARNING RESOLVED] Perangkat %s (%s) pulih normal (%s ms). Tiket WARNING di-resolve tanpa pesan WA Recovery.",
+                    service.name, service.ip_address, rtt_ms if rtt_ms is not None else 0.0
+                )
         else:
             db.commit()
 
