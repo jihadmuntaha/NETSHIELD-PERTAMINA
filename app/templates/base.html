@@ -45,13 +45,7 @@
                     <span>NOC Dashboard</span>
                 </a>
 
-                <!-- 2. Topologi Jaringan -->
-                <a href="/topology" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'topology' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
-                    <i class="fa-solid fa-sitemap w-5 text-center {% if active_page == 'topology' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
-                    <span>Topologi Jaringan</span>
-                </a>
-
-                <!-- 3. Assets Import -->
+                <!-- 2. Assets Import -->
                 <a href="/import-assets" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'import-assets' or active_page == 'import-kmz' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
                     <i class="fa-solid fa-file-import w-5 text-center {% if active_page == 'import-assets' or active_page == 'import-kmz' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
                     <span>Assets Import</span>
@@ -109,6 +103,15 @@
                 <a href="/api/incidents/export-csv" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-2">
                     <i class="fa-solid fa-file-csv text-emerald-400"></i>
                     <span>Export CSV</span>
+                </a>
+                <div class="h-5 w-px bg-slate-800 mx-1"></div>
+                <div class="flex items-center gap-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/60 text-xs font-medium text-slate-300">
+                    <i class="fa-solid fa-user-shield text-red-400"></i>
+                    <span>Operator: <strong class="text-white">{{ request.session.get('user', 'admin') if request and request.session else 'admin' }}</strong></span>
+                </div>
+                <a href="/logout" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-red-600 hover:bg-red-700 text-white shadow-sm shadow-red-900/30 border border-red-500/30 transition flex items-center gap-1.5" title="Logout dari Sistem">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                    <span>Logout</span>
                 </a>
             </div>
         </header>

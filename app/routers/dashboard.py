@@ -82,21 +82,6 @@ def noc_dashboard(request: Request, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/topology", response_class=HTMLResponse)
-def topology_view(request: Request, db: Session = Depends(get_db)):
-    """Render Network Topology 3-Tier Hierarchy web page."""
-    services = db.query(MonitoredService).all()
-    return templates.TemplateResponse(
-        request=request,
-        name="topology.html",
-        context={
-            "services": services,
-            "active_page": "topology",
-            "app_name": os.getenv("APP_NAME", "Pertamina NetShield")
-        }
-    )
-
-
 @router.get("/import-assets", response_class=HTMLResponse)
 @router.get("/import-kmz", response_class=HTMLResponse)
 def import_assets_view(request: Request, db: Session = Depends(get_db)):

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="id" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Operator NOC - Pertamina NetShield</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background-color: #090d16;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(237, 28, 36, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(0, 84, 166, 0.18) 0px, transparent 50%),
+                radial-gradient(at 50% 50%, rgba(15, 23, 42, 0.5) 0px, transparent 100%);
+            min-height: 100vh;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        }
+        .login-card {
+            background: rgba(15, 23, 42, 0.92);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 16px;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(12px);
+        }
+        .brand-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #ed1c24, #b31217);
+            box-shadow: 0 0 25px rgba(237, 28, 36, 0.45);
+        }
+        .form-control {
+            background-color: #111827;
+            border-color: #1f2937;
+            color: #f3f4f6;
+            padding: 0.75rem 1rem;
+            font-size: 0.95rem;
+        }
+        .form-control:focus {
+            background-color: #1f2937;
+            border-color: #ed1c24;
+            color: #ffffff;
+            box-shadow: 0 0 0 0.25rem rgba(237, 28, 36, 0.25);
+        }
+        .input-group-text {
+            background-color: #111827;
+            border-color: #1f2937;
+            color: #9ca3af;
+        }
+        .btn-pertamina {
+            background: linear-gradient(135deg, #ed1c24 0%, #c81017 100%);
+            border: none;
+            color: white;
+            font-weight: 700;
+            padding: 0.8rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 18px rgba(237, 28, 36, 0.35);
+            transition: all 0.2s ease-in-out;
+            letter-spacing: 0.03em;
+        }
+        .btn-pertamina:hover {
+            background: linear-gradient(135deg, #ff242c 0%, #db141c 100%);
+            box-shadow: 0 6px 24px rgba(237, 28, 36, 0.55);
+            color: white;
+            transform: translateY(-1px);
+        }
+        .badge-jbt {
+            background-color: rgba(0, 84, 166, 0.25);
+            color: #38bdf8;
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            font-size: 0.75rem;
+            letter-spacing: 0.06em;
+        }
+    </style>
+</head>
+<body class="d-flex align-items-center justify-content-center min-vh-100 py-5">
+
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-12 col-sm-10 col-md-8 col-lg-5 col-xl-4">
+                
+                <!-- Login Card -->
+                <div class="login-card p-4 p-sm-5">
+                    
+                    <!-- Header -->
+                    <div class="text-center mb-4">
+                        <div class="brand-icon rounded-3 d-inline-flex align-items-center justify-content-center mb-3">
+                            <i class="fa-solid fa-shield-halved fs-2 text-white"></i>
+                        </div>
+                        <div class="mb-2">
+                            <span class="badge badge-jbt px-3 py-1.5 rounded-pill uppercase font-monospace">
+                                <i class="bi bi-building me-1"></i> PERTAMINA JBT
+                            </span>
+                        </div>
+                        <h4 class="fw-bold text-white mb-1">PERTAMINA <span class="text-danger">NETSHIELD</span></h4>
+                        <p class="text-secondary small mb-0">NOC Command Center • FT Pengapon</p>
+                    </div>
+
+                    <!-- Error Alert -->
+                    {% if error %}
+                    <div class="alert alert-danger alert-dismissible fade show border-0 bg-danger bg-opacity-20 text-danger-emphasis d-flex align-items-center gap-2 mb-4" role="alert">
+                        <i class="bi bi-exclamation-triangle-fill fs-5 text-danger shrink-0"></i>
+                        <div class="small fw-semibold flex-grow-1">{{ error }}</div>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                    {% endif %}
+
+                    <!-- Login Form -->
+                    <form action="/login" method="POST">
+                        
+                        <!-- Username / Operator ID -->
+                        <div class="mb-3">
+                            <label for="username" class="form-label text-slate-300 small fw-bold">
+                                <i class="bi bi-person-badge me-1 text-secondary"></i> ID OPERATOR / USERNAME
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-person"></i></span>
+                                <input type="text" class="form-control" id="username" name="username" value="{{ username or '' }}" placeholder="Masukkan ID Operator" required autofocus>
+                            </div>
+                        </div>
+
+                        <!-- Password -->
+                        <div class="mb-4">
+                            <label for="password" class="form-label text-slate-300 small fw-bold">
+                                <i class="bi bi-key me-1 text-secondary"></i> PASSWORD
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                                <input type="password" class="form-control" id="password" name="password" placeholder="Masukkan Password" required>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <button type="submit" class="btn btn-pertamina w-100 mb-3">
+                            <i class="bi bi-box-arrow-in-right me-2"></i> MASUK NOC DASHBOARD
+                        </button>
+
+                    </form>
+
+                    <!-- Card Footer info -->
+                    <div class="text-center pt-3 border-top border-secondary border-opacity-25 mt-3">
+                        <p class="text-secondary mb-0" style="font-size: 0.75rem;">
+                            <i class="bi bi-shield-lock me-1"></i> Sistem Terproteksi • Akses Khusus Petugas NOC
+                        </p>
+                    </div>
+
+                </div>
+
+                <!-- Footer Text -->
+                <div class="text-center mt-4">
+                    <p class="text-secondary small mb-0">
+                        &copy; 2026 PT Pertamina Patra Niaga • JBT FT Pengapon
+                    </p>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
