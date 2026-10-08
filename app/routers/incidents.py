@@ -1,18 +1,37 @@
+"""
+app/routers/incidents.py
+========================
+Router Incident Operations Center (IOC) & Manajemen Tiket Insiden Pertamina NetShield.
+"""
+
+import os
 import csv
 import io
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.models.monitoring import IncidentLog, AuditLog
-from app.schemas.monitoring import IncidentResponse, IncidentAcknowledge
+from app.models import Device, IncidentLog, AuditLog
 
-router = APIRouter(prefix="/api/incidents", tags=["Incidents"])
-v1_router = APIRouter(prefix="/api/v1/incidents", tags=["Incidents V1"])
+# Setup Jinja2 Templates Directory
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+TEMPLATES_DIR = os.path.join(BASE_DIR, "app", "templates")
+if not os.path.exists(TEMPLATES_DIR):
+    TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+# Main router with prefix="/incidents"
+router = APIRouter(prefix="/incidents", tags=["Incident Operations Center"])
+
+# Secondary API router for backward compatibility with AJAX/Prometheus polling
+api_router = APIRouter(prefix="/api/incidents", tags=["Incidents API"])
+v1_router = APIRouter(prefix="/api/v1/incidents", tags=["Incidents API V1"])
 
 
 class AckPayload(BaseModel):
@@ -20,24 +39,152 @@ class AckPayload(BaseModel):
     ack_message: Optional[str] = None
 
 
-@router.get("", response_model=List[IncidentResponse])
-def get_incidents(db: Session = Depends(get_db)):
-    """List all active and historical incident logs."""
-    return db.query(IncidentLog).options(joinedload(IncidentLog.service)).order_by(IncidentLog.created_at.desc()).all()
+# =============================================================================
+# WEB INTERFACE ROUTE HANDLERS
+# =============================================================================
 
-
-@router.get("/active")
-@v1_router.get("/active")
-def get_active_incidents(db: Session = Depends(get_db)):
+@router.get("", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
+def incidents_page(request: Request, db: Session = Depends(get_db)):
     """
-    Endpoint API Penyedia Data Insiden Aktif (status != 'RESOLVED').
-    Kembalikan data JSON ringan untuk polling status real-time dan ACK.
+    GET /incidents: Render Incident Operations Center (incidents.html)
+    Menampilkan daftar seluruh insiden aktif & historis terurut dari yang terbaru.
     """
     incidents = (
         db.query(IncidentLog)
-        .options(joinedload(IncidentLog.service))
+        .options(joinedload(IncidentLog.device))
+        .order_by(IncidentLog.started_at.desc())
+        .all()
+    )
+    current_user = request.session.get("user", "Operator On-Duty") if hasattr(request, "session") and request.session else "Operator On-Duty"
+
+    return templates.TemplateResponse(
+        request=request,
+        name="incidents.html",
+        context={
+            "request": request,
+            "incidents": incidents,
+            "user": current_user,
+            "active_page": "incidents",
+            "app_name": os.getenv("APP_NAME", "Pertamina NetShield")
+        }
+    )
+
+
+@router.post("/{incident_id}/claim")
+def claim_incident(
+    incident_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    POST /incidents/{incident_id}/claim:
+    - Mengambil nama operator dari session (default "Operator On-Duty").
+    - Mengubah assigned_to = current_user dan status = IN_PROGRESS jika sebelumnya NEW atau ACKNOWLEDGED.
+    - Redirect ke /incidents.
+    """
+    current_user = request.session.get("user", "Operator On-Duty") if hasattr(request, "session") and request.session else "Operator On-Duty"
+    
+    incident = db.query(IncidentLog).filter(IncidentLog.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tiket insiden tidak ditemukan.")
+
+    if incident.status in ("NEW", "ACKNOWLEDGED"):
+        now_utc = datetime.utcnow()
+        incident.assigned_to = current_user
+        incident.ack_by = current_user
+        incident.status = "IN_PROGRESS"
+
+        if not incident.acknowledged_at:
+            incident.acknowledged_at = now_utc
+            if incident.started_at:
+                incident.tta_seconds = (now_utc - incident.started_at).total_seconds()
+
+        # Audit Log
+        audit = AuditLog(
+            user_name=current_user,
+            action=f"Claimed Incident ID #{incident_id} (Status: IN_PROGRESS)",
+            ip_address=request.client.host if request.client else "127.0.0.1",
+            timestamp=datetime.utcnow()
+        )
+        db.add(audit)
+        db.commit()
+
+    return RedirectResponse(url="/incidents", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/{incident_id}/resolve")
+def resolve_incident(
+    incident_id: int,
+    request: Request,
+    notes: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    """
+    POST /incidents/{incident_id}/resolve:
+    - Menerima form parameter notes (Catatan Perbaikan / RCA).
+    - Mengubah status menjadi RESOLVED, mengisi resolved_at, dan menghitung ttr_seconds.
+    - Memeriksa jika perangkat tidak memiliki tiket aktif lain; jika bersih, set status perangkat menjadi NORMAL.
+    - Redirect ke /incidents.
+    """
+    current_user = request.session.get("user", "Operator On-Duty") if hasattr(request, "session") and request.session else "Operator On-Duty"
+
+    incident = db.query(IncidentLog).filter(IncidentLog.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tiket insiden tidak ditemukan.")
+
+    now_utc = datetime.utcnow()
+    incident.status = "RESOLVED"
+    incident.resolution_notes = notes
+    incident.resolved_at = now_utc
+
+    if incident.started_at:
+        incident.ttr_seconds = (now_utc - incident.started_at).total_seconds()
+
+    # Cek tiket aktif lain pada perangkat yang sama
+    active_incidents_count = db.query(IncidentLog).filter(
+        IncidentLog.device_id == incident.device_id,
+        IncidentLog.status != "RESOLVED",
+        IncidentLog.id != incident.id
+    ).count()
+
+    if active_incidents_count == 0:
+        device = db.query(Device).filter(Device.id == incident.device_id).first()
+        if device:
+            device.status = "NORMAL"
+
+    # Audit Log
+    audit = AuditLog(
+        user_name=current_user,
+        action=f"Resolved Incident ID #{incident_id} (RCA: {notes or 'N/A'})",
+        ip_address=request.client.host if request.client else "127.0.0.1",
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit)
+    db.commit()
+
+    return RedirectResponse(url="/incidents", status_code=status.HTTP_303_SEE_OTHER)
+
+
+# =============================================================================
+# BACKWARD COMPATIBLE JSON API ENDPOINTS & CSV EXPORT
+# =============================================================================
+
+@api_router.get("")
+def get_incidents_json(db: Session = Depends(get_db)):
+    """API List all incidents."""
+    return db.query(IncidentLog).options(joinedload(IncidentLog.device)).order_by(IncidentLog.started_at.desc()).all()
+
+
+@api_router.get("/active")
+@v1_router.get("/active")
+def get_active_incidents_json(db: Session = Depends(get_db)):
+    """API List active incidents for status polling."""
+    incidents = (
+        db.query(IncidentLog)
+        .options(joinedload(IncidentLog.device))
         .filter(IncidentLog.status != "RESOLVED")
-        .order_by(IncidentLog.created_at.desc())
+        .order_by(IncidentLog.started_at.desc())
         .all()
     )
 
@@ -45,81 +192,34 @@ def get_active_incidents(db: Session = Depends(get_db)):
     wib_tz = timezone(timedelta(hours=7))
 
     for inc in incidents:
-        service_name = inc.service.name if inc.service else "N/A"
-        ip_address = inc.service.ip_address if inc.service else "N/A"
-        zone = (
-            inc.service.area.value
-            if inc.service and hasattr(inc.service.area, "value")
-            else str(inc.service.area if inc.service else "N/A")
-        )
+        dev_name = inc.device.name if inc.device else "N/A"
+        ip_addr = inc.device.ip_address if inc.device else "N/A"
+        loc_name = inc.device.location_name if inc.device else "N/A"
 
         ack_at_formatted = None
-        if inc.ack_at:
-            ack_dt = inc.ack_at.replace(tzinfo=wib_tz) if inc.ack_at.tzinfo is None else inc.ack_at.astimezone(wib_tz)
+        if inc.acknowledged_at:
+            ack_dt = inc.acknowledged_at.replace(tzinfo=wib_tz) if inc.acknowledged_at.tzinfo is None else inc.acknowledged_at.astimezone(wib_tz)
             ack_at_formatted = ack_dt.strftime("%H:%M WIB")
-
-        is_ack = (inc.status == "ACKNOWLEDGED") or getattr(inc, "is_acknowledged", False)
-        ack_by_name = inc.ack_by or getattr(inc, "acknowledged_by", None)
 
         result.append({
             "id": inc.id,
-            "device_name": service_name,
-            "ip_address": ip_address,
-            "zone": zone,
+            "device_name": dev_name,
+            "ip_address": ip_addr,
+            "location_name": loc_name,
             "severity": inc.severity,
-            "title": getattr(inc, "title", None) or ("Device DOWN" if inc.severity == "CRITICAL" else f"{inc.severity} Incident"),
+            "title": inc.title or ("Device DOWN" if inc.severity == "CRITICAL" else f"{inc.severity} Incident"),
             "latency_ms": inc.latency_ms,
             "status": inc.status,
-            "is_acknowledged": is_ack,
-            "acknowledged_by": ack_by_name,
+            "assigned_to": inc.assigned_to,
             "acknowledged_at": ack_at_formatted,
-            "ack_message": inc.ack_message or "",
-            "created_at": inc.created_at.strftime("%Y-%m-%d %H:%M:%S") if inc.created_at else None,
+            "resolution_notes": inc.resolution_notes or "",
+            "started_at": inc.started_at.strftime("%Y-%m-%d %H:%M:%S") if inc.started_at else None,
         })
 
     return result
 
 
-
-@router.post("/{incident_id}/ack", response_model=IncidentResponse)
-def acknowledge_incident(
-    incident_id: int,
-    payload: AckPayload,
-    request: Request,
-    db: Session = Depends(get_db)
-):
-    """Acknowledge an incident log."""
-    incident = db.query(IncidentLog).filter(IncidentLog.id == incident_id).first()
-    if not incident:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found.")
-
-    if incident.status == "ACKNOWLEDGED":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incident is already acknowledged.")
-
-    wib_tz = timezone(timedelta(hours=7))
-    current_wib = datetime.now(wib_tz).replace(tzinfo=None)
-
-    incident.status = "ACKNOWLEDGED"
-    incident.ack_by = payload.ack_by
-    incident.ack_message = payload.ack_message
-    incident.ack_at = current_wib
-
-    # Create Audit Log
-    audit = AuditLog(
-        user_name=payload.ack_by,
-        action=f"Acknowledged Incident ID {incident_id}",
-        ip_address=request.client.host if request.client else "127.0.0.1",
-        timestamp=datetime.utcnow()
-    )
-    db.add(audit)
-
-    db.commit()
-    db.refresh(incident)
-    return incident
-
-
 def format_duration(seconds: Optional[float]) -> str:
-    """Helper untuk memformat durasi detik ke format human-readable (contoh: '15m 30s')."""
     if seconds is None or seconds < 0:
         return "-"
     tot = int(seconds)
@@ -133,26 +233,25 @@ def format_duration(seconds: Optional[float]) -> str:
         return f"{secs}s"
 
 
-@router.get("/export-csv")
+@api_router.get("/export-csv")
 def export_incidents_csv(
     target_date: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Stream incident logs as a CSV file with date filter (WIB), BOM UTF-8, and SLA calculation."""
+    """Stream incident logs as CSV file."""
     wib_tz = timezone(timedelta(hours=7))
     now_wib = datetime.now(wib_tz)
-    
+
     if target_date:
         try:
             date_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
         except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Format tanggal tidak valid. Gunakan YYYY-MM-DD.")
+            raise HTTPException(status_code=400, detail="Format tanggal tidak valid. Gunakan YYYY-MM-DD.")
     else:
         date_obj = now_wib.date()
 
     report_date_str = date_obj.strftime("%Y-%m-%d")
 
-    # Filter rentang tanggal WIB (00:00:00 s/d 23:59:59 WIB) -> Konversi ke UTC
     start_wib = datetime.combine(date_obj, datetime.min.time())
     end_wib = datetime.combine(date_obj, datetime.max.time())
     start_utc = start_wib - timedelta(hours=7)
@@ -160,100 +259,75 @@ def export_incidents_csv(
 
     incidents = (
         db.query(IncidentLog)
-        .options(joinedload(IncidentLog.service))
-        .filter(IncidentLog.created_at >= start_utc, IncidentLog.created_at <= end_utc)
-        .order_by(IncidentLog.created_at.desc())
+        .options(joinedload(IncidentLog.device))
+        .filter(IncidentLog.started_at >= start_utc, IncidentLog.started_at <= end_utc)
+        .order_by(IncidentLog.started_at.desc())
         .all()
     )
 
     def iter_csv():
         output = io.StringIO()
         writer = csv.writer(output)
-        
-        # Write UTF-8 BOM
-        yield "\ufeff"
+        yield "\ufeff"  # UTF-8 BOM
 
-        # Write CSV Header
         writer.writerow([
             "ID Insiden",
+            "Lokasi Operasional",
             "Nama Perangkat",
             "IP Address",
-            "Area / Zona",
             "Severity",
             "Latency (ms)",
             "Status",
-            "Waktu Kejadian (WIB)",
-            "Teknisi (ACK By)",
-            "Catatan ACK",
+            "Waktu Mulai (WIB)",
+            "Operator (Assignee)",
             "Waktu ACK (WIB)",
             "SLA ACK (TTA)",
             "Waktu Selesai (WIB)",
-            "SLA Resolve (TTR)"
+            "SLA Resolve (TTR)",
+            "Catatan RCA"
         ])
         yield output.getvalue()
         output.seek(0)
         output.truncate(0)
 
-        # Write Data Rows
         for item in incidents:
-            service_name = item.service.name if item.service else "N/A"
-            ip_address = item.service.ip_address if item.service else "N/A"
-            area = (
-                item.service.area.value
-                if item.service and hasattr(item.service.area, "value")
-                else (item.service.area if item.service else "N/A")
-            )
+            dev_name = item.device.name if item.device else "N/A"
+            ip_address = item.device.ip_address if item.device else "N/A"
+            loc_name = item.device.location_name if item.device else "N/A"
 
-            # Konversi created_at (UTC DB) ke WIB (+7)
-            created_wib_dt = item.created_at + timedelta(hours=7) if item.created_at else None
-            created_wib_str = created_wib_dt.strftime("%Y-%m-%d %H:%M:%S") if created_wib_dt else "-"
+            started_wib_dt = item.started_at + timedelta(hours=7) if item.started_at else None
+            started_wib_str = started_wib_dt.strftime("%Y-%m-%d %H:%M:%S") if started_wib_dt else "-"
 
-            # ack_at (WIB)
-            ack_wib_dt = item.ack_at
+            ack_wib_dt = item.acknowledged_at + timedelta(hours=7) if item.acknowledged_at else None
             ack_wib_str = ack_wib_dt.strftime("%Y-%m-%d %H:%M:%S") if ack_wib_dt else "-"
 
-            # resolved_at (WIB)
-            resolved_wib_dt = item.resolved_at
+            resolved_wib_dt = item.resolved_at + timedelta(hours=7) if item.resolved_at else None
             resolved_wib_str = resolved_wib_dt.strftime("%Y-%m-%d %H:%M:%S") if resolved_wib_dt else "-"
 
-            # TTA (Time to Acknowledge)
-            tta_str = "-"
-            if ack_wib_dt and created_wib_dt:
-                tta_sec = (ack_wib_dt - created_wib_dt).total_seconds()
-                tta_str = format_duration(tta_sec)
-
-            # TTR (Time to Resolve)
-            ttr_str = "-"
-            if resolved_wib_dt and created_wib_dt:
-                ttr_sec = (resolved_wib_dt - created_wib_dt).total_seconds()
-                ttr_str = format_duration(ttr_sec)
-
+            tta_str = format_duration(item.tta_seconds)
+            ttr_str = format_duration(item.ttr_seconds)
             latency_str = f"{item.latency_ms} ms" if item.latency_ms is not None else "-"
 
             writer.writerow([
                 f"#INC-{item.id}",
-                service_name,
+                loc_name,
+                dev_name,
                 ip_address,
-                area,
                 item.severity,
                 latency_str,
                 item.status,
-                created_wib_str,
-                item.ack_by or "-",
-                item.ack_message or "-",
+                started_wib_str,
+                item.assigned_to or "-",
                 ack_wib_str,
                 tta_str,
                 resolved_wib_str,
-                ttr_str
+                ttr_str,
+                item.resolution_notes or "-"
             ])
             yield output.getvalue()
             output.seek(0)
             output.truncate(0)
 
-    filename = f"Pertamina_NetShield_Report_{report_date_str}.csv"
-    headers = {
-        "Content-Disposition": f'attachment; filename="{filename}"'
-    }
-
+    filename = f"Pertamina_NetShield_Incidents_{report_date_str}.csv"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(iter_csv(), media_type="text/csv; charset=utf-8", headers=headers)
-

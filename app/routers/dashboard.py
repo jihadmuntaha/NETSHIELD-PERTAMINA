@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.models.monitoring import MonitoredService, IncidentLog, AuditLog, AreaZona
+from app.models import Device, MonitoredService, IncidentLog, AuditLog, AreaZona
 
 router = APIRouter(tags=["Dashboard"])
 
@@ -20,7 +20,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
 def calculate_zone_summary(services: List[MonitoredService]) -> List[Dict[str, Any]]:
-    """Calculate summary statistics (Total, UP, DOWN, Maintenance) for each AreaZona."""
+    """Calculate summary statistics (Total, UP/NORMAL, DOWN/CRITICAL/WARNING, Maintenance) per zone/location."""
     zones = [
         AreaZona.ZONA_1.value,
         AreaZona.ZONA_2.value,
@@ -34,7 +34,7 @@ def calculate_zone_summary(services: List[MonitoredService]) -> List[Dict[str, A
     }
 
     for service in services:
-        area_str = service.area.value if hasattr(service.area, "value") else str(service.area)
+        area_str = service.area.value if hasattr(service.area, "value") and service.area else (service.location_name or "Zona Standard")
         if area_str not in summary_map:
             summary_map[area_str] = {
                 "zone_name": area_str,
@@ -45,9 +45,9 @@ def calculate_zone_summary(services: List[MonitoredService]) -> List[Dict[str, A
             }
 
         summary_map[area_str]["total"] += 1
-        if service.is_maintenance:
+        if getattr(service, "is_maintenance", False):
             summary_map[area_str]["maintenance"] += 1
-        elif service.status == "UP":
+        elif service.status in ("UP", "NORMAL"):
             summary_map[area_str]["up"] += 1
         else:
             summary_map[area_str]["down"] += 1
@@ -61,13 +61,14 @@ def noc_dashboard(request: Request, db: Session = Depends(get_db)):
     services = db.query(MonitoredService).all()
     incidents = (
         db.query(IncidentLog)
-        .options(joinedload(IncidentLog.service))
-        .order_by(IncidentLog.created_at.desc())
+        .options(joinedload(IncidentLog.device))
+        .order_by(IncidentLog.started_at.desc())
         .limit(10)
         .all()
     )
 
     zone_summary = calculate_zone_summary(services)
+    user = request.session.get("user", "Operator On-Duty") if hasattr(request, "session") and request.session else "Operator On-Duty"
 
     return templates.TemplateResponse(
         request=request,
@@ -77,6 +78,34 @@ def noc_dashboard(request: Request, db: Session = Depends(get_db)):
             "incidents": incidents,
             "zone_summary": zone_summary,
             "active_page": "noc",
+            "user": user,
+            "app_name": os.getenv("APP_NAME", "Pertamina NetShield")
+        }
+    )
+
+
+@router.get("/topology", response_class=HTMLResponse)
+def topology_view(request: Request, db: Session = Depends(get_db)):
+    """Render Topology View web page."""
+    services = db.query(MonitoredService).all()
+    incidents = (
+        db.query(IncidentLog)
+        .options(joinedload(IncidentLog.device))
+        .filter(IncidentLog.status != "RESOLVED")
+        .all()
+    )
+    zone_summary = calculate_zone_summary(services)
+    user = request.session.get("user", "Operator On-Duty") if hasattr(request, "session") and request.session else "Operator On-Duty"
+
+    return templates.TemplateResponse(
+        request=request,
+        name="noc.html",
+        context={
+            "services": services,
+            "incidents": incidents,
+            "zone_summary": zone_summary,
+            "active_page": "topology",
+            "user": user,
             "app_name": os.getenv("APP_NAME", "Pertamina NetShield")
         }
     )
@@ -93,6 +122,8 @@ def import_assets_view(request: Request, db: Session = Depends(get_db)):
         .limit(50)
         .all()
     )
+    user = request.session.get("user", "Operator On-Duty") if hasattr(request, "session") and request.session else "Operator On-Duty"
+
     return templates.TemplateResponse(
         request=request,
         name="import_assets.html",
@@ -100,6 +131,7 @@ def import_assets_view(request: Request, db: Session = Depends(get_db)):
             "asset_logs": asset_logs,
             "kmz_logs": asset_logs,
             "active_page": "import-assets",
+            "user": user,
             "app_name": os.getenv("APP_NAME", "Pertamina NetShield")
         }
     )
@@ -109,32 +141,15 @@ def import_assets_view(request: Request, db: Session = Depends(get_db)):
 def devices_inventory_view(request: Request, db: Session = Depends(get_db)):
     """Render Device Inventory Management web page."""
     services = db.query(MonitoredService).all()
+    user = request.session.get("user", "Operator On-Duty") if hasattr(request, "session") and request.session else "Operator On-Duty"
+
     return templates.TemplateResponse(
         request=request,
         name="devices.html",
         context={
             "services": services,
             "active_page": "devices",
-            "app_name": os.getenv("APP_NAME", "Pertamina NetShield")
-        }
-    )
-
-
-@router.get("/incidents", response_class=HTMLResponse)
-def incidents_view(request: Request, db: Session = Depends(get_db)):
-    """Render Incident Logs & Claim ACK web page."""
-    incidents = (
-        db.query(IncidentLog)
-        .options(joinedload(IncidentLog.service))
-        .order_by(IncidentLog.created_at.desc())
-        .all()
-    )
-    return templates.TemplateResponse(
-        request=request,
-        name="incidents.html",
-        context={
-            "incidents": incidents,
-            "active_page": "incidents",
+            "user": user,
             "app_name": os.getenv("APP_NAME", "Pertamina NetShield")
         }
     )
@@ -144,16 +159,18 @@ def incidents_view(request: Request, db: Session = Depends(get_db)):
 def audit_view(request: Request, db: Session = Depends(get_db)):
     """Render Audit Logs & System Configuration web page."""
     audit_logs = db.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(100).all()
+    user = request.session.get("user", "Operator On-Duty") if hasattr(request, "session") and request.session else "Operator On-Duty"
+
     return templates.TemplateResponse(
         request=request,
         name="audit.html",
         context={
             "audit_logs": audit_logs,
             "active_page": "audit",
+            "user": user,
             "app_name": os.getenv("APP_NAME", "Pertamina NetShield")
         }
     )
-
 
 
 @router.get("/api/dashboard-summary")
@@ -162,27 +179,29 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
     services = db.query(MonitoredService).all()
     incidents = (
         db.query(IncidentLog)
-        .options(joinedload(IncidentLog.service))
-        .order_by(IncidentLog.created_at.desc())
+        .options(joinedload(IncidentLog.device))
+        .order_by(IncidentLog.started_at.desc())
         .limit(10)
         .all()
     )
 
     total_services = len(services)
-    up_count = sum(1 for s in services if s.status == "UP" and not s.is_maintenance)
-    down_count = sum(1 for s in services if s.status == "DOWN" and not s.is_maintenance)
+    up_count = sum(1 for s in services if s.status in ("UP", "NORMAL") and not s.is_maintenance)
+    down_count = sum(1 for s in services if s.status in ("DOWN", "CRITICAL", "WARNING") and not s.is_maintenance)
     maintenance_count = sum(1 for s in services if s.is_maintenance)
 
     zone_summary = calculate_zone_summary(services)
 
-    # Format services list for API response
     services_data = [
         {
             "id": s.id,
             "name": s.name,
             "ip_address": s.ip_address,
-            "area": s.area.value if hasattr(s.area, "value") else str(s.area),
-            "device_type": s.device_type.value if hasattr(s.device_type, "value") else str(s.device_type),
+            "location_name": getattr(s, "location_name", "Regional HQ Semarang"),
+            "site_type": getattr(s, "site_type", "FUEL_TERMINAL"),
+            "level": getattr(s, "level", 0),
+            "area": s.area.value if hasattr(s.area, "value") and s.area else str(s.area),
+            "device_type": s.device_type.value if hasattr(s.device_type, "value") and s.device_type else str(s.device_type),
             "status": s.status,
             "response_time_ms": s.response_time_ms,
             "is_maintenance": s.is_maintenance,
@@ -191,21 +210,21 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
         for s in services
     ]
 
-    # Format recent incidents
     incidents_data = [
         {
             "id": inc.id,
-            "service_id": inc.service_id,
-            "service_name": inc.service.name if inc.service else "N/A",
-            "ip_address": inc.service.ip_address if inc.service else "N/A",
+            "device_id": inc.device_id,
+            "device_name": inc.device.name if inc.device else "N/A",
+            "ip_address": inc.device.ip_address if inc.device else "N/A",
+            "location_name": inc.device.location_name if inc.device else "N/A",
             "severity": inc.severity,
-            "title": getattr(inc, "title", None) or ("Device DOWN" if inc.severity == "CRITICAL" else f"{inc.severity} Incident"),
+            "title": inc.title or ("Device DOWN" if inc.severity == "CRITICAL" else f"{inc.severity} Incident"),
             "latency_ms": inc.latency_ms,
             "status": inc.status,
-            "ack_by": inc.ack_by,
-            "ack_message": inc.ack_message,
-            "created_at": inc.created_at.isoformat() if inc.created_at else None,
-            "ack_at": inc.ack_at.isoformat() if inc.ack_at else None,
+            "assigned_to": inc.assigned_to,
+            "resolution_notes": inc.resolution_notes,
+            "started_at": inc.started_at.isoformat() if inc.started_at else None,
+            "acknowledged_at": inc.acknowledged_at.isoformat() if inc.acknowledged_at else None,
         }
         for inc in incidents
     ]

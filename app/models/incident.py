@@ -1,10 +1,25 @@
 """
 app/models/incident.py
 ======================
-Model skema insiden Pertamina NetShield.
-Re-exports IncidentLog dan kelas-kelas terkait dari app.models.monitoring.
+Re-exports IncidentLog dan kelas terkait dari app.models.
 """
 
-from app.models.monitoring import IncidentLog, MonitoredService, AreaZona, DeviceType, AuditLog
+from app.models import (
+    Device,
+    MonitoredService,
+    IncidentLog,
+    AuditLog,
+    AreaZona,
+    SiteType,
+    DeviceType,
+)
 
-__all__ = ["IncidentLog", "MonitoredService", "AreaZona", "DeviceType", "AuditLog"]
+__all__ = [
+    "Device",
+    "MonitoredService",
+    "IncidentLog",
+    "AuditLog",
+    "AreaZona",
+    "SiteType",
+    "DeviceType",
+]

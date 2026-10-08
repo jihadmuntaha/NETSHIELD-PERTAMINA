@@ -1,334 +1,281 @@
 {% extends "base.html" %}
 
-{% block title %}Incident Logs &amp; Alert Management{% endblock %}
+{% block title %}Incident Operations Center{% endblock %}
 
 {% block content %}
-<!-- Page Header -->
-<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-    <div>
-        <h2 class="text-2xl font-bold text-white tracking-wide flex items-center gap-3">
-            <i class="fa-solid fa-triangle-exclamation text-red-500"></i>
-            <span>Incident Logs &amp; Claim ACK Panel</span>
-        </h2>
-        <p class="text-sm text-slate-400">Pengelolaan Laporan Gangguan &amp; Klaim Tindak Lanjut Perbaikan (ACK) Pertamina NetShield</p>
-    </div>
-    <div class="flex items-center gap-3">
-        <div class="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5">
-            <i class="fa-solid fa-calendar-days text-slate-400 text-xs"></i>
-            <input type="date" id="export-date-picker" class="bg-transparent text-xs text-white focus:outline-none cursor-pointer">
-        </div>
-        <button onclick="downloadCSVReport()" class="px-4 py-2 text-sm font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30 transition flex items-center gap-2">
-            <i class="fa-solid fa-file-csv"></i>
-            <span>Export CSV Report</span>
-        </button>
-    </div>
-</div>
+<div class="space-y-6">
 
-<!-- INCIDENTS TABLE CARD -->
-<div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-5">
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-        <div>
+    <!-- Header Banner & Stats Summary -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+        <div class="absolute -right-10 -bottom-10 w-64 h-64 bg-red-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-xl bg-red-600/20 border border-red-500/30 text-red-400 flex items-center justify-center text-2xl shadow-inner">
+                        <i class="bi bi-shield-exclamation"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-extrabold text-white tracking-wide">PERTAMINA INCIDENT OPERATIONS CENTER (IOC)</h2>
+                        <p class="text-xs text-slate-400">Monitoring &amp; Manajemen Tiket Insiden Real-time Unit Operasi Pertamina JBT</p>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="/api/incidents/export-csv" class="btn btn-sm btn-outline-light d-flex items-center gap-2 px-3 py-2 text-xs font-semibold">
+                    <i class="bi bi-file-earmark-spreadsheet text-success"></i>
+                    Export Laporan CSV
+                </a>
+            </div>
+        </div>
+
+        <!-- Metrics Cards Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-slate-800">
+            {% set total_inc = incidents | length %}
+            {% set active_inc = incidents | selectattr('status', 'ne', 'RESOLVED') | list | length %}
+            {% set critical_inc = incidents | selectattr('status', 'ne', 'RESOLVED') | selectattr('severity', 'eq', 'CRITICAL') | list | length %}
+            {% set warning_inc = incidents | selectattr('status', 'ne', 'RESOLVED') | selectattr('severity', 'eq', 'WARNING') | list | length %}
+
+            <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Insiden</p>
+                    <h3 class="text-2xl font-black text-white mt-0.5">{{ total_inc }}</h3>
+                </div>
+                <div class="w-10 h-10 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center text-lg">
+                    <i class="bi bi-collection-fill"></i>
+                </div>
+            </div>
+
+            <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Insiden Aktif</p>
+                    <h3 class="text-2xl font-black text-amber-400 mt-0.5">{{ active_inc }}</h3>
+                </div>
+                <div class="w-10 h-10 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center text-lg">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                </div>
+            </div>
+
+            <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status Critical</p>
+                    <h3 class="text-2xl font-black text-red-500 mt-0.5">{{ critical_inc }}</h3>
+                </div>
+                <div class="w-10 h-10 rounded-lg bg-red-500/10 text-red-400 flex items-center justify-center text-lg">
+                    <i class="bi bi-x-circle-fill"></i>
+                </div>
+            </div>
+
+            <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status Warning</p>
+                    <h3 class="text-2xl font-black text-yellow-400 mt-0.5">{{ warning_inc }}</h3>
+                </div>
+                <div class="w-10 h-10 rounded-lg bg-yellow-500/10 text-yellow-400 flex items-center justify-center text-lg">
+                    <i class="bi bi-exclamation-circle-fill"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dark Console Table Container -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
+        <div class="p-5 border-b border-slate-800 flex items-center justify-between">
             <h3 class="text-base font-bold text-white flex items-center gap-2">
-                <i class="fa-solid fa-clock-rotate-left text-blue-400"></i>
-                <span>Daftar Log Kejadian Gangguan</span>
+                <i class="bi bi-list-stars text-red-500"></i>
+                Daftar Tiket Insiden Pemantauan NetShield NOC
             </h3>
-            <p class="text-xs text-slate-400">Total Laporan: <span id="total-incidents-count" class="font-bold text-slate-200">{{ incidents|length }}</span> Insiden
-                <span class="ml-2 font-mono text-[11px] text-slate-300 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
-                    <span id="unack-count" class="text-red-400 font-bold">0</span> Unacknowledged / 
-                    <span id="ack-count" class="text-blue-400 font-bold">0</span> Acknowledged / 
-                    <span id="res-count" class="text-emerald-400 font-bold">0</span> Resolved
-                </span>
-            </p>
-
+            <span class="text-xs text-slate-400 font-mono">Real-time DB Sync</span>
         </div>
-        <div class="flex items-center gap-3">
-            <select id="filter-status" onchange="filterIncidentsTable()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                <option value="ALL">Semua Status</option>
-                <option value="NEW">🚨 NEW (Unclaimed)</option>
-                <option value="ACKNOWLEDGED">✍️ ACKNOWLEDGED</option>
-                <option value="RESOLVED">✅ RESOLVED</option>
-            </select>
-            <select id="filter-severity" onchange="filterIncidentsTable()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                <option value="ALL">Semua Severity</option>
-                <option value="CRITICAL">🚨 CRITICAL</option>
-                <option value="WARNING">⚠️ WARNING</option>
-                <option value="DISASTER">🔥 DISASTER</option>
-                <option value="HIGH">⚡ HIGH</option>
-            </select>
-        </div>
-    </div>
 
-    <div class="overflow-x-auto">
-        <table class="w-full text-left text-sm text-slate-300">
-            <thead class="bg-slate-950 text-xs uppercase text-slate-400 border-b border-slate-800">
-                <tr>
-                    <th class="py-3 px-4 font-semibold">ID</th>
-                    <th class="py-3 px-4 font-semibold">Perangkat Terdampak</th>
-                    <th class="py-3 px-4 font-semibold">Severity</th>
-                    <th class="py-3 px-4 font-semibold">Latensi (RTT)</th>
-                    <th class="py-3 px-4 font-semibold">Waktu Kejadian</th>
-                    <th class="py-3 px-4 font-semibold">Status</th>
-                    <th class="py-3 px-4 font-semibold">Teknisi / Catatan ACK</th>
-                    <th class="py-3 px-4 font-semibold text-right">Aksi Klaim</th>
-                </tr>
-            </thead>
-            <tbody id="incidents-tbody" class="divide-y divide-slate-800/60 font-medium">
-                {% if not incidents %}
-                <tr><td colspan="8" class="py-8 text-center text-slate-500 italic">Tidak ada log insiden tercatat saat ini. Seluruh sistem beroperasi normal.</td></tr>
-                {% endif %}
-                {% for inc in incidents %}
-                <tr class="hover:bg-slate-800/40 transition inc-row" data-status="{{ inc.status }}" data-severity="{{ inc.severity }}">
-                    <td class="py-3.5 px-4 font-mono text-xs text-slate-400">#INC-{{ inc.id }}</td>
-                    <td class="py-3.5 px-4">
-                        <div class="font-bold text-white">{{ inc.service.name if inc.service else 'N/A' }}</div>
-                        <div class="text-xs text-slate-400"><code>{{ inc.service.ip_address if inc.service else '-' }}</code></div>
-                    </td>
-                    <td class="py-3.5 px-4">
-                        {% if inc.severity == 'CRITICAL' %}
-                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🚨 CRITICAL</span>
-                        {% elif inc.severity == 'WARNING' %}
-                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-amber-400 text-slate-900 shadow-md">⚠️ WARNING</span>
-                        {% elif inc.severity == 'DISASTER' %}
-                        <span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-700 text-white shadow-lg shadow-red-700/40">🔥 DISASTER</span>
-                        {% elif inc.severity == 'HIGH' %}
-                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚡ HIGH</span>
-                        {% else %}
-                        <span class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">{{ inc.severity }}</span>
-                        {% endif %}
-                    </td>
-                    <td class="py-3.5 px-4 text-xs font-mono text-slate-300">
-                        {% if inc.latency_ms is not none %}
-                        <span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 font-bold border border-amber-500/20">{{ inc.latency_ms }} ms</span>
-                        {% else %}
-                        <span class="text-slate-500">-</span>
-                        {% endif %}
-                    </td>
-                    <td class="py-3.5 px-4 text-xs text-slate-400 font-mono">{{ inc.created_at.strftime('%Y-%m-%d %H:%M:%S') if inc.created_at else '-' }}</td>
-                    <td class="py-3.5 px-4">
-                        {% if inc.status == 'NEW' %}
-                        <span class="px-2.5 py-1 text-xs font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">NEW</span>
-                        {% elif inc.status == 'ACKNOWLEDGED' %}
-                        <span class="px-2.5 py-1 text-xs font-bold rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">ACKNOWLEDGED</span>
-                        {% else %}
-                        <span class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">RESOLVED</span>
-                        {% endif %}
-                    </td>
-                    <td class="py-3.5 px-4 text-xs">
-                        {% if inc.ack_by %}
-                        <div class="font-bold text-slate-200"><i class="fa-solid fa-user-check text-blue-400 mr-1"></i>{{ inc.ack_by }}</div>
-                        <div class="text-slate-400 italic truncate max-w-[220px]">{{ inc.ack_message or '-' }}</div>
-                        {% else %}
-                        <span class="text-slate-500 italic">Belum ditangani</span>
-                        {% endif %}
-                    </td>
-                    <td class="py-3.5 px-4 text-right">
-                        {% if inc.status == 'NEW' %}
-                        {% set inc_srv_name = inc.service.name if inc.service else "Node" %}
-                        <button data-inc-id="{{ inc.id }}" data-srv-name="{{ inc_srv_name }}" onclick="openAckModal(this.getAttribute('data-inc-id'), this.getAttribute('data-srv-name'))" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/30 transition">
-                            <i class="fa-solid fa-hand-holding-hand mr-1"></i>Claim ACK
-                        </button>
-                        {% else %}
-                        <span class="text-xs text-slate-500 font-semibold"><i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i>Claimed</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<!-- MODAL: PROBLEM ACKNOWLEDGMENT (ACK) -->
-<div id="ack-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center hidden">
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl space-y-4">
-        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                <i class="fa-solid fa-user-gear text-blue-400"></i>
-                <span>Claim Incident Acknowledgment</span>
-            </h3>
-            <button onclick="closeAckModal()" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-xmark text-lg"></i></button>
-        </div>
-        <form id="ack-form" onsubmit="submitAckForm(event)" class="space-y-4">
-            <input type="hidden" id="modal-incident-id" value="">
-            <div>
-                <label class="block text-xs font-semibold text-slate-400 mb-1">Perangkat Terdampak</label>
-                <input type="text" id="modal-service-name" disabled class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 font-bold">
-            </div>
-            <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1">Nama Teknisi / ACK By <span class="text-red-500">*</span></label>
-                <input type="text" id="ack-by-input" required placeholder="Contoh: Budi (IT Support FT Pengapon)" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:outline-none">
-            </div>
-            <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1">Catatan Penanganan (ACK Message)</label>
-                <textarea id="ack-msg-input" rows="3" placeholder="Catatan awal pemeriksaan atau estimasi perbaikan..." class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
-            </div>
-            <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-                <button type="button" onclick="closeAckModal()" class="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">Batal</button>
-                <button type="submit" class="px-4 py-2 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/30 transition">Simpan ACK</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<script>
-    function filterIncidentsTable() {
-        const stVal = document.getElementById('filter-status').value;
-        const sevVal = document.getElementById('filter-severity').value;
-        document.querySelectorAll('.inc-row').forEach(row => {
-            const matchStatus = (stVal === 'ALL' || row.dataset.status === stVal);
-            const matchSev = (sevVal === 'ALL' || row.dataset.severity === sevVal);
-            row.style.display = (matchStatus && matchSev) ? '' : 'none';
-        });
-    }
-
-    function openAckModal(incidentId, serviceName) {
-        document.getElementById('modal-incident-id').value = incidentId;
-        document.getElementById('modal-service-name').value = serviceName;
-        document.getElementById('ack-by-input').value = '';
-        document.getElementById('ack-msg-input').value = '';
-        document.getElementById('ack-modal').classList.remove('hidden');
-    }
-
-    function closeAckModal() {
-        document.getElementById('ack-modal').classList.add('hidden');
-    }
-
-    async function submitAckForm(event) {
-        event.preventDefault();
-        const incidentId = document.getElementById('modal-incident-id').value;
-        const ackBy = document.getElementById('ack-by-input').value.trim();
-        const ackMsg = document.getElementById('ack-msg-input').value.trim();
-        if (!ackBy) { alert('Nama Teknisi wajib diisi!'); return; }
-        try {
-            const res = await fetch(`/api/incidents/${incidentId}/ack`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ack_by: ackBy, ack_message: ackMsg })
-            });
-            if (res.ok) {
-                closeAckModal();
-                fetchIncidentsRealtime();
-            } else {
-                const e = await res.json();
-                alert('Gagal ACK: ' + (e.detail || 'Kesalahan'));
-            }
-        } catch (ex) { alert('Error: ' + ex); }
-    }
-
-    async function fetchIncidentsRealtime() {
-        try {
-            // Polling API endpoint untuk update status real-time
-            const res = await fetch('/api/incidents');
-            if (!res.ok) return;
-            const data = await res.json();
-
-            let unackCount = 0;
-            let ackCount = 0;
-            let resCount = 0;
-
-            data.forEach(inc => {
-                if (inc.status === 'RESOLVED') resCount++;
-                else if (inc.status === 'ACKNOWLEDGED' || inc.is_acknowledged) ackCount++;
-                else unackCount++;
-            });
-
-            const totalEl = document.getElementById('total-incidents-count');
-            const unackEl = document.getElementById('unack-count');
-            const ackEl = document.getElementById('ack-count');
-            const resEl = document.getElementById('res-count');
-
-            if (totalEl) totalEl.innerText = data.length;
-            if (unackEl) unackEl.innerText = unackCount;
-            if (ackEl) ackEl.innerText = ackCount;
-            if (resEl) resEl.innerText = resCount;
-
-            const incidentsTbody = document.getElementById('incidents-tbody');
-            if (incidentsTbody && data) {
-                if (data.length === 0) {
-                    incidentsTbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-slate-500 italic">Tidak ada log insiden tercatat saat ini. Seluruh sistem beroperasi normal.</td></tr>`;
-                } else {
-                    let html = '';
-                    data.forEach(inc => {
-                        let sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-amber-400 text-slate-900 shadow-md">⚠️ WARNING</span>`;
-                        if (inc.severity === 'CRITICAL') {
-                            sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🚨 CRITICAL</span>`;
-                        } else if (inc.severity === 'DISASTER') {
-                            sevBadge = `<span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-700 text-white shadow-lg shadow-red-700/40">🔥 DISASTER</span>`;
-                        } else if (inc.severity === 'HIGH') {
-                            sevBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚡ HIGH</span>`;
-                        }
-
-                        let latCol = `<span class="text-slate-500">-</span>`;
-                        if (inc.latency_ms !== null && inc.latency_ms !== undefined) {
-                            latCol = `<span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 font-bold border border-amber-500/20">${inc.latency_ms} ms</span>`;
-                        }
-
-                        let stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">RESOLVED</span>`;
-                        let claimCol = `<span class="text-xs text-slate-500 font-semibold"><i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i>Resolved</span>`;
-
-                        const incSrvName = inc.service ? inc.service.name : (inc.service_name || 'Node');
-                        const srvIp = inc.service ? inc.service.ip_address : (inc.ip_address || '-');
-
-                        if (inc.status === 'NEW' || (!inc.is_acknowledged && inc.status !== 'ACKNOWLEDGED' && inc.status !== 'RESOLVED')) {
-                            stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">NEW</span>`;
-                            const srvEsc = incSrvName.replace(/"/g, '&quot;');
-                            claimCol = `<button data-inc-id="${inc.id}" data-srv-name="${srvEsc}" onclick="openAckModal(this.getAttribute('data-inc-id'), this.getAttribute('data-srv-name'))" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/30 transition"><i class="fa-solid fa-hand-holding-hand mr-1"></i>Claim ACK</button>`;
-                        } else if (inc.status === 'ACKNOWLEDGED' || inc.is_acknowledged) {
-                            stBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">ACKNOWLEDGED</span>`;
-                            claimCol = `<span class="text-xs text-slate-500 font-semibold"><i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i>Claimed</span>`;
-                        }
-
-                        const ackBy = inc.ack_by || inc.acknowledged_by;
-                        let ackCol = `<span class="text-slate-500 italic">Belum ditangani</span>`;
-                        if (ackBy) {
-                            ackCol = `<div class="font-bold text-slate-200"><i class="fa-solid fa-user-check text-blue-400 mr-1"></i>${ackBy}</div><div class="text-slate-400 italic truncate max-w-[220px]">${inc.ack_message || '-'}</div>`;
-                        }
-
-                        const dtStr = inc.created_at ? inc.created_at.replace('T', ' ').substring(0, 19) : '-';
-
-                        html += `<tr class="hover:bg-slate-800/40 transition inc-row" data-status="${inc.status}" data-severity="${inc.severity}" id="inc-row-${inc.id}">
-                            <td class="py-3.5 px-4 font-mono text-xs text-slate-400">#INC-${inc.id}</td>
-                            <td class="py-3.5 px-4">
-                                <div class="font-bold text-white">${incSrvName}</div>
-                                <div class="text-xs text-slate-400"><code>${srvIp}</code></div>
+        <div class="table-responsive">
+            <table class="table table-dark table-hover table-striped align-middle mb-0 text-sm">
+                <thead>
+                    <tr class="text-slate-400 text-xs text-uppercase border-bottom border-slate-700">
+                        <th class="ps-4 py-3">ID Insiden</th>
+                        <th class="py-3">Lokasi Operasional</th>
+                        <th class="py-3">Perangkat &amp; IP</th>
+                        <th class="py-3">Severity</th>
+                        <th class="py-3">Status</th>
+                        <th class="py-3">Assignee (Operator)</th>
+                        <th class="py-3">Waktu Kejadian</th>
+                        <th class="pe-4 py-3 text-end">Aksi &amp; Tindakan</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if incidents %}
+                        {% for inc in incidents %}
+                        <tr class="border-bottom border-slate-800">
+                            <!-- 1. ID -->
+                            <td class="ps-4 py-3 font-monospace fw-bold text-info">
+                                #INC-{{ inc.id }}
                             </td>
-                            <td class="py-3.5 px-4">${sevBadge}</td>
-                            <td class="py-3.5 px-4 font-mono text-xs">${latCol}</td>
-                            <td class="py-3.5 px-4 text-xs text-slate-400 font-mono">${dtStr}</td>
-                            <td class="py-3.5 px-4">${stBadge}</td>
-                            <td class="py-3.5 px-4 text-xs">${ackCol}</td>
-                            <td class="py-3.5 px-4 text-right">${claimCol}</td>
-                        </tr>`;
-                    });
-                    incidentsTbody.innerHTML = html;
-                    filterIncidentsTable();
-                }
-            }
-        } catch (ex) { console.error('Incidents polling error:', ex); }
-    }
 
-    // Set default date picker ke hari ini (YYYY-MM-DD)
-    document.addEventListener('DOMContentLoaded', () => {
-        const datePicker = document.getElementById('export-date-picker');
-        if (datePicker) {
-            const today = new Date().toISOString().split('T')[0];
-            datePicker.value = today;
-        }
-    });
+                            <!-- 2. Lokasi Operasional -->
+                            <td>
+                                <span class="badge bg-primary bg-opacity-20 text-info border border-info border-opacity-30 rounded-pill px-2.5 py-1">
+                                    <i class="bi bi-geo-alt-fill me-1"></i>{{ inc.device.location_name if inc.device else 'Regional HQ Semarang' }}
+                                </span>
+                            </td>
 
-    function downloadCSVReport() {
-        const datePicker = document.getElementById('export-date-picker');
-        const selectedDate = datePicker ? datePicker.value : '';
-        let url = '/api/incidents/export-csv';
-        if (selectedDate) {
-            url += `?target_date=${selectedDate}`;
-        }
-        window.location.href = url;
-    }
+                            <!-- 3. Nama Perangkat & IP -->
+                            <td>
+                                <div class="fw-bold text-white fs-6">{{ inc.device.name if inc.device else 'Perangkat #'+str(inc.device_id) }}</div>
+                                <div class="small text-slate-400 font-monospace">
+                                    <i class="bi bi-ethernet me-1 text-slate-500"></i>{{ inc.device.ip_address if inc.device else '-' }}
+                                </div>
+                            </td>
 
-    // Jalankan polling awal dan set interval 3 detik
-    fetchIncidentsRealtime();
-    setInterval(fetchIncidentsRealtime, 3000);
-</script>
+                            <!-- 4. Severity Badge -->
+                            <td>
+                                {% if inc.severity == 'CRITICAL' %}
+                                    <span class="badge bg-danger text-white border border-danger-subtle px-2.5 py-1">
+                                        <i class="bi bi-exclamation-octagon-fill me-1"></i>CRITICAL
+                                    </span>
+                                {% elif inc.severity == 'WARNING' %}
+                                    <span class="badge bg-warning text-dark border border-warning-subtle px-2.5 py-1">
+                                        <i class="bi bi-exclamation-triangle-fill me-1"></i>WARNING
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-info text-dark px-2.5 py-1">{{ inc.severity }}</span>
+                                {% endif %}
+                            </td>
 
+                            <!-- 5. Status Badge -->
+                            <td>
+                                {% if inc.status == 'NEW' %}
+                                    <span class="badge bg-danger bg-opacity-10 text-danger border border-danger px-2.5 py-1">
+                                        <i class="bi bi-bell-fill me-1"></i>NEW
+                                    </span>
+                                {% elif inc.status == 'IN_PROGRESS' %}
+                                    <span class="badge bg-info bg-opacity-10 text-info border border-info px-2.5 py-1">
+                                        <i class="bi bi-arrow-repeat me-1"></i>IN_PROGRESS
+                                    </span>
+                                {% elif inc.status == 'ACKNOWLEDGED' %}
+                                    <span class="badge bg-warning bg-opacity-10 text-warning border border-warning px-2.5 py-1">
+                                        <i class="bi bi-person-check-fill me-1"></i>ACKNOWLEDGED
+                                    </span>
+                                {% elif inc.status == 'RESOLVED' %}
+                                    <span class="badge bg-success bg-opacity-10 text-success border border-success px-2.5 py-1">
+                                        <i class="bi bi-check-circle-fill me-1"></i>RESOLVED
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-secondary px-2.5 py-1">{{ inc.status }}</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- 6. Assignee -->
+                            <td>
+                                {% if inc.assigned_to %}
+                                    <span class="text-info fw-semibold">
+                                        <i class="bi bi-person-fill me-1"></i>{{ inc.assigned_to }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-slate-500 fst-italic">
+                                        <i class="bi bi-dash-circle me-1"></i>Belum Diklaim
+                                    </span>
+                                {% endif %}
+                            </td>
+
+                            <!-- 7. Timestamp Mulai -->
+                            <td>
+                                <div class="text-slate-300 font-monospace text-xs">
+                                    {{ inc.started_at.strftime('%Y-%m-%d %H:%M:%S') if inc.started_at else '-' }}
+                                </div>
+                            </td>
+
+                            <!-- 8. Kolom Tindakan -->
+                            <td class="pe-4 py-3 text-end">
+                                <div class="d-flex items-center justify-content-end gap-2">
+                                    {% if inc.status != 'RESOLVED' %}
+                                        <!-- Tombol [Klaim] jika status NEW atau belum ada assigned_to -->
+                                        {% if inc.status in ['NEW', 'ACKNOWLEDGED'] or not inc.assigned_to %}
+                                            <form action="/incidents/{{ inc.id }}/claim" method="POST" class="d-inline">
+                                                <button type="submit" class="btn btn-sm btn-outline-info d-flex items-center gap-1 font-semibold">
+                                                    <i class="bi bi-hand-index-thumb"></i>
+                                                    <span>Klaim</span>
+                                                </button>
+                                            </form>
+                                        {% endif %}
+
+                                        <!-- Tombol [Resolve] membuka Modal Bootstrap Dark -->
+                                        <button type="button" class="btn btn-sm btn-success d-flex items-center gap-1 font-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#resolveModal{{ inc.id }}">
+                                            <i class="bi bi-check2-square"></i>
+                                            <span>Resolve</span>
+                                        </button>
+                                    {% else %}
+                                        <!-- Insiden Selesai -->
+                                        <span class="badge bg-secondary bg-opacity-40 text-slate-300 border border-slate-700 py-1.5 px-3">
+                                            <i class="bi bi-check-all text-success me-1"></i>Selesai
+                                        </span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- =========================================================
+                             BOOTSTRAP 5 DARK MODAL FOR RESOLVE (Per Incident ID)
+                        ========================================================= -->
+                        {% if inc.status != 'RESOLVED' %}
+                        <div class="modal fade" id="resolveModal{{ inc.id }}" tabindex="-1" aria-labelledby="resolveModalLabel{{ inc.id }}" aria-hidden="true" data-bs-theme="dark">
+                            <div class="modal-dialog modal-dialog-centered">
+                                <div class="modal-content bg-slate-900 border border-slate-700 text-light shadow-2xl">
+                                    <div class="modal-header border-bottom border-slate-800">
+                                        <h5 class="modal-title font-bold text-white d-flex items-center gap-2" id="resolveModalLabel{{ inc.id }}">
+                                            <i class="bi bi-shield-check text-success fs-5"></i>
+                                            Resolve Tiket Insiden #INC-{{ inc.id }}
+                                        </h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                                    </div>
+                                    <form action="/incidents/{{ inc.id }}/resolve" method="POST">
+                                        <div class="modal-body space-y-4">
+                                            <div class="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1">
+                                                <div class="d-flex justify-content-between text-xs">
+                                                    <span class="text-slate-400">Perangkat:</span>
+                                                    <strong class="text-white">{{ inc.device.name if inc.device else 'N/A' }}</strong>
+                                                </div>
+                                                <div class="d-flex justify-content-between text-xs">
+                                                    <span class="text-slate-400">Lokasi:</span>
+                                                    <span class="text-info fw-semibold">{{ inc.device.location_name if inc.device else 'N/A' }}</span>
+                                                </div>
+                                                <div class="d-flex justify-content-between text-xs">
+                                                    <span class="text-slate-400">Severity:</span>
+                                                    <span class="fw-bold {% if inc.severity == 'CRITICAL' %}text-danger{% else %}text-warning{% endif %}">{{ inc.severity }}</span>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label class="form-label text-xs font-semibold text-slate-300 mb-1">
+                                                    Catatan Perbaikan / Root Cause Analysis (RCA) <span class="text-danger">*</span>
+                                                </label>
+                                                <textarea name="notes" rows="4" required placeholder="Masukkan dokumentasi penyebab utama masalah dan langkah tindakan perbaikan yang telah dilakukan oleh tim NOC..." class="form-control bg-slate-950 border-slate-700 text-white focus:border-success focus:ring-1 focus:ring-success text-sm"></textarea>
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer border-top border-slate-800">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                                            <button type="submit" class="btn btn-sm btn-success font-bold d-flex items-center gap-1.5 shadow">
+                                                <i class="bi bi-check-circle-fill"></i>
+                                                <span>Simpan RCA &amp; Resolve Tiket</span>
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center py-5 text-slate-500">
+                                <i class="bi bi-shield-check fs-1 text-slate-600 mb-2 d-block"></i>
+                                Belum ada catatan insiden yang terdaftar dalam sistem.
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
 {% endblock %}
