@@ -3,6 +3,19 @@
 {% block title %}Incident Operations Center{% endblock %}
 
 {% block content %}
+<style>
+    .ioc-card { background:#0f172a; border:1px solid #1e293b; border-radius:1rem; }
+    .ioc-label { display:block; font-size:.68rem; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em; margin-bottom:.3rem; }
+    .ioc-input { background:#020617 !important; border:1px solid #334155 !important; color:#f1f5f9 !important; font-size:.82rem; color-scheme:dark; }
+    .ioc-input:focus { border-color:#3b82f6 !important; box-shadow:0 0 0 .2rem rgba(59,130,246,.25) !important; }
+    .ioc-table thead th { background:#020617; color:#94a3b8; font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; padding:.8rem .75rem; border-bottom:1px solid #1e293b; white-space:nowrap; }
+    .ioc-table tbody td { padding:.8rem .75rem; vertical-align:middle; }
+    .ioc-mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .ioc-down  { color:#f87171; } .ioc-up { color:#34d399; }
+    .ioc-still { background:rgba(239,68,68,.15); color:#f87171; border:1px solid rgba(239,68,68,.45); letter-spacing:.06em; }
+    .ioc-modal .modal-content { background:#0f172a; border:1px solid #334155; border-radius:1rem; }
+</style>
+
 <div class="space-y-6">
 
     <!-- Header Banner & Stats Summary -->
@@ -21,9 +34,9 @@
                 </div>
             </div>
             <div class="flex items-center gap-3">
-                <a href="/api/incidents/export-csv" class="btn btn-sm btn-outline-light d-flex items-center gap-2 px-3 py-2 text-xs font-semibold">
+                <a href="/incidents/export/csv" id="btn-export-all" class="btn btn-sm btn-outline-light d-flex items-center gap-2 px-3 py-2 text-xs font-semibold">
                     <i class="bi bi-file-earmark-spreadsheet text-success"></i>
-                    Export Laporan CSV
+                    Export Semua (CSV)
                 </a>
             </div>
         </div>
@@ -77,196 +90,225 @@
         </div>
     </div>
 
+    <!-- =========================================================
+         FILTER LAPORAN: Rentang Hari & Per Bulan (memicu unduh CSV)
+    ========================================================= -->
+    <div class="ioc-card p-4 shadow-xl" id="export-filter-card">
+        <div class="d-flex align-items-center gap-2 mb-3">
+            <i class="bi bi-funnel-fill text-info"></i>
+            <h3 class="text-base font-bold text-white mb-0">Ekspor Laporan Gangguan (CSV)</h3>
+            <span class="small text-secondary ms-1">Filter berdasarkan waktu gangguan mulai (Down)</span>
+        </div>
+
+        <div class="row g-3">
+            <!-- Form 1: Rentang hari -->
+            <div class="col-lg-7">
+                <form method="get" action="/incidents/export/csv" id="form-export-range" class="p-3 rounded-3 h-100" style="background:rgba(2,6,23,.55);border:1px solid #1e293b;">
+                    <div class="ioc-label"><i class="bi bi-calendar-range me-1"></i>Rentang Hari</div>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-sm-4">
+                            <label class="small text-secondary mb-1" for="export-start-date">Dari tanggal</label>
+                            <input type="date" id="export-start-date" name="start_date" class="form-control form-control-sm ioc-input" max="{{ today }}">
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="small text-secondary mb-1" for="export-end-date">Sampai tanggal</label>
+                            <input type="date" id="export-end-date" name="end_date" class="form-control form-control-sm ioc-input" max="{{ today }}">
+                        </div>
+                        <div class="col-sm-4">
+                            <button type="submit" id="btn-export-range" class="btn btn-sm btn-success w-100 fw-bold d-flex align-items-center justify-content-center gap-2">
+                                <i class="bi bi-download"></i>Unduh CSV
+                            </button>
+                        </div>
+                    </div>
+                    <div id="export-range-error" class="small text-danger mt-2 d-none"></div>
+                </form>
+            </div>
+
+            <!-- Form 2: Per bulan -->
+            <div class="col-lg-5">
+                <form method="get" action="/incidents/export/csv" id="form-export-month" class="p-3 rounded-3 h-100" style="background:rgba(2,6,23,.55);border:1px solid #1e293b;">
+                    <div class="ioc-label"><i class="bi bi-calendar3 me-1"></i>Laporan Bulanan</div>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-5">
+                            <label class="small text-secondary mb-1" for="export-month">Bulan</label>
+                            <select id="export-month" name="month" class="form-select form-select-sm ioc-input">
+                                {% for m in month_names %}
+                                <option value="{{ loop.index }}" {% if loop.index == current_month %}selected{% endif %}>{{ m }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-3">
+                            <label class="small text-secondary mb-1" for="export-year">Tahun</label>
+                            <input type="number" id="export-year" name="year" value="{{ current_year }}" min="2000" max="2100" class="form-control form-control-sm ioc-input">
+                        </div>
+                        <div class="col-4">
+                            <button type="submit" id="btn-export-month" class="btn btn-sm btn-success w-100 fw-bold d-flex align-items-center justify-content-center gap-2">
+                                <i class="bi bi-download"></i>Unduh
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Main Dark Console Table Container -->
     <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
         <div class="p-5 border-b border-slate-800 flex items-center justify-between">
             <h3 class="text-base font-bold text-white flex items-center gap-2">
                 <i class="bi bi-list-stars text-red-500"></i>
-                Daftar Tiket Insiden Pemantauan NetShield NOC
+                Riwayat Siklus Gangguan (Down &rarr; Up)
             </h3>
-            <span class="text-xs text-slate-400 font-mono">Real-time DB Sync</span>
+            <span class="text-xs text-slate-400 font-mono">Waktu dalam WIB &middot; Real-time DB Sync</span>
         </div>
 
         <div class="table-responsive">
-            <table class="table table-dark table-hover table-striped align-middle mb-0 text-sm">
+            <table class="table table-dark table-hover align-middle mb-0 text-sm ioc-table" id="incident-table">
                 <thead>
-                    <tr class="text-slate-400 text-xs text-uppercase border-bottom border-slate-700">
-                        <th class="ps-4 py-3">ID Insiden</th>
-                        <th class="py-3">Lokasi Operasional</th>
-                        <th class="py-3">Perangkat &amp; IP</th>
-                        <th class="py-3">Severity</th>
-                        <th class="py-3">Status</th>
-                        <th class="py-3">Assignee (Operator)</th>
-                        <th class="py-3">Waktu Kejadian</th>
-                        <th class="pe-4 py-3 text-end">Aksi &amp; Tindakan</th>
+                    <tr class="text-slate-400 text-xs text-uppercase">
+                        <th class="ps-4">ID</th>
+                        <th>Perangkat &amp; Lokasi</th>
+                        <th>Severity</th>
+                        <th>Pemicu Gangguan</th>
+                        <th>Waktu Down</th>
+                        <th>Waktu Up / Pulih</th>
+                        <th>Durasi Downtime</th>
+                        <th>Status Tiket</th>
+                        <th>Operator</th>
+                        <th class="pe-4 text-end">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% if incidents %}
                         {% for inc in incidents %}
-                        <tr class="border-bottom border-slate-800">
+                        {% set dt_sec = downtime_seconds(inc) %}
+                        <tr class="border-bottom border-slate-800" id="incident-row-{{ inc.id }}">
                             <!-- 1. ID -->
-                            <td class="ps-4 py-3 font-monospace fw-bold text-info">
-                                #INC-{{ inc.id }}
-                            </td>
+                            <td class="ps-4 font-monospace fw-bold text-info">#INC-{{ inc.id }}</td>
 
-                            <!-- 2. Lokasi Operasional -->
+                            <!-- 2. Perangkat, IP & Lokasi -->
                             <td>
-                                <span class="badge bg-primary bg-opacity-20 text-info border border-info border-opacity-30 rounded-pill px-2.5 py-1">
-                                    <i class="bi bi-geo-alt-fill me-1"></i>{{ inc.device.location_name if inc.device else 'Regional HQ Semarang' }}
-                                </span>
-                            </td>
-
-                            <!-- 3. Nama Perangkat & IP -->
-                            <td>
-                                <div class="fw-bold text-white fs-6">{{ inc.device.name if inc.device else 'Perangkat #'+str(inc.device_id) }}</div>
+                                <div class="fw-bold text-white">{{ inc.device.name if inc.device else 'Perangkat #' ~ inc.device_id }}</div>
                                 <div class="small text-slate-400 font-monospace">
                                     <i class="bi bi-ethernet me-1 text-slate-500"></i>{{ inc.device.ip_address if inc.device else '-' }}
                                 </div>
+                                <span class="badge bg-primary bg-opacity-10 text-info border border-info border-opacity-25 rounded-pill mt-1 fw-normal">
+                                    <i class="bi bi-geo-alt-fill me-1"></i>{{ inc.device.location_name if inc.device else 'N/A' }}
+                                </span>
                             </td>
 
-                            <!-- 4. Severity Badge -->
+                            <!-- 3. Severity -->
                             <td>
                                 {% if inc.severity == 'CRITICAL' %}
-                                    <span class="badge bg-danger text-white border border-danger-subtle px-2.5 py-1">
-                                        <i class="bi bi-exclamation-octagon-fill me-1"></i>CRITICAL
-                                    </span>
+                                    <span class="badge bg-danger text-white border border-danger-subtle px-2.5 py-1"><i class="bi bi-exclamation-octagon-fill me-1"></i>CRITICAL</span>
                                 {% elif inc.severity == 'WARNING' %}
-                                    <span class="badge bg-warning text-dark border border-warning-subtle px-2.5 py-1">
-                                        <i class="bi bi-exclamation-triangle-fill me-1"></i>WARNING
-                                    </span>
+                                    <span class="badge bg-warning text-dark border border-warning-subtle px-2.5 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>WARNING</span>
                                 {% else %}
                                     <span class="badge bg-info text-dark px-2.5 py-1">{{ inc.severity }}</span>
                                 {% endif %}
                             </td>
 
-                            <!-- 5. Status Badge -->
+                            <!-- 4. Pemicu Gangguan (Trigger Cause) -->
+                            <td class="small">
+                                {% if inc.severity == 'WARNING' %}
+                                    <span class="text-warning"><i class="bi bi-speedometer me-1"></i>{{ trigger_cause(inc) }}</span>
+                                {% else %}
+                                    <span class="text-danger-emphasis ioc-down"><i class="bi bi-plug-fill me-1"></i>{{ trigger_cause(inc) }}</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- 5. Waktu Down (started_at) -->
+                            <td>
+                                <div class="ioc-mono small ioc-down">
+                                    <i class="bi bi-arrow-down-circle-fill me-1"></i>{{ inc.started_at.strftime('%Y-%m-%d') if inc.started_at else '-' }}
+                                </div>
+                                <div class="ioc-mono text-slate-300 fw-semibold">{{ inc.started_at.strftime('%H:%M:%S') if inc.started_at else '' }}</div>
+                            </td>
+
+                            <!-- 6. Waktu Up / Pulih (resolved_at) -->
+                            <td>
+                                {% if inc.resolved_at %}
+                                    <div class="ioc-mono small ioc-up">
+                                        <i class="bi bi-arrow-up-circle-fill me-1"></i>{{ inc.resolved_at.strftime('%Y-%m-%d') }}
+                                    </div>
+                                    <div class="ioc-mono text-slate-300 fw-semibold">{{ inc.resolved_at.strftime('%H:%M:%S') }}</div>
+                                {% elif inc.status != 'RESOLVED' %}
+                                    <span class="badge ioc-still px-2.5 py-1 animate-pulse"><i class="bi bi-broadcast me-1"></i>STILL DOWN</span>
+                                {% else %}
+                                    <span class="text-slate-500">-</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- 7. Total Durasi Downtime (ttr_seconds) -->
+                            <td>
+                                {% if dt_sec is not none %}
+                                    <div class="ioc-mono fw-bold {% if inc.resolved_at %}text-white{% else %}ioc-down{% endif %}" title="{{ dt_sec | int }} detik">
+                                        {{ format_duration(dt_sec) }}
+                                    </div>
+                                    {% if not inc.resolved_at and inc.status != 'RESOLVED' %}
+                                        <div class="text-slate-500" style="font-size:.68rem;">sedang berjalan</div>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-slate-500">-</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- 8. Status Tiket -->
                             <td>
                                 {% if inc.status == 'NEW' %}
-                                    <span class="badge bg-danger bg-opacity-10 text-danger border border-danger px-2.5 py-1">
-                                        <i class="bi bi-bell-fill me-1"></i>NEW
-                                    </span>
+                                    <span class="badge bg-danger bg-opacity-10 text-danger border border-danger px-2.5 py-1"><i class="bi bi-bell-fill me-1"></i>NEW</span>
                                 {% elif inc.status == 'IN_PROGRESS' %}
-                                    <span class="badge bg-info bg-opacity-10 text-info border border-info px-2.5 py-1">
-                                        <i class="bi bi-arrow-repeat me-1"></i>IN_PROGRESS
-                                    </span>
+                                    <span class="badge bg-info bg-opacity-10 text-info border border-info px-2.5 py-1"><i class="bi bi-arrow-repeat me-1"></i>IN_PROGRESS</span>
                                 {% elif inc.status == 'ACKNOWLEDGED' %}
-                                    <span class="badge bg-warning bg-opacity-10 text-warning border border-warning px-2.5 py-1">
-                                        <i class="bi bi-person-check-fill me-1"></i>ACKNOWLEDGED
-                                    </span>
+                                    <span class="badge bg-warning bg-opacity-10 text-warning border border-warning px-2.5 py-1"><i class="bi bi-person-check-fill me-1"></i>ACKNOWLEDGED</span>
                                 {% elif inc.status == 'RESOLVED' %}
-                                    <span class="badge bg-success bg-opacity-10 text-success border border-success px-2.5 py-1">
-                                        <i class="bi bi-check-circle-fill me-1"></i>RESOLVED
-                                    </span>
+                                    <span class="badge bg-success bg-opacity-10 text-success border border-success px-2.5 py-1"><i class="bi bi-check-circle-fill me-1"></i>RESOLVED</span>
                                 {% else %}
                                     <span class="badge bg-secondary px-2.5 py-1">{{ inc.status }}</span>
                                 {% endif %}
                             </td>
 
-                            <!-- 6. Assignee -->
+                            <!-- 9. Operator (Assignee) -->
                             <td>
                                 {% if inc.assigned_to %}
-                                    <span class="text-info fw-semibold">
-                                        <i class="bi bi-person-fill me-1"></i>{{ inc.assigned_to }}
-                                    </span>
+                                    <span class="text-info fw-semibold"><i class="bi bi-person-fill me-1"></i>{{ inc.assigned_to }}</span>
                                 {% else %}
-                                    <span class="text-slate-500 fst-italic">
-                                        <i class="bi bi-dash-circle me-1"></i>Belum Diklaim
-                                    </span>
+                                    <span class="text-slate-500 fst-italic"><i class="bi bi-dash-circle me-1"></i>Belum Diklaim</span>
                                 {% endif %}
                             </td>
 
-                            <!-- 7. Timestamp Mulai -->
-                            <td>
-                                <div class="text-slate-300 font-monospace text-xs">
-                                    {{ inc.started_at.strftime('%Y-%m-%d %H:%M:%S') if inc.started_at else '-' }}
-                                </div>
-                            </td>
-
-                            <!-- 8. Kolom Tindakan -->
+                            <!-- 10. Aksi: Klaim / Resolve (catatan RCA) -->
                             <td class="pe-4 py-3 text-end">
                                 <div class="d-flex items-center justify-content-end gap-2">
                                     {% if inc.status != 'RESOLVED' %}
-                                        <!-- Tombol [Klaim] jika status NEW atau belum ada assigned_to -->
-                                        {% if inc.status in ['NEW', 'ACKNOWLEDGED'] or not inc.assigned_to %}
+                                        {% if inc.status in ['NEW', 'ACKNOWLEDGED'] %}
                                             <form action="/incidents/{{ inc.id }}/claim" method="POST" class="d-inline">
-                                                <button type="submit" class="btn btn-sm btn-outline-info d-flex items-center gap-1 font-semibold">
+                                                <button type="submit" id="btn-claim-{{ inc.id }}" class="btn btn-sm btn-outline-info d-flex items-center gap-1 font-semibold">
                                                     <i class="bi bi-hand-index-thumb"></i>
                                                     <span>Klaim</span>
                                                 </button>
                                             </form>
                                         {% endif %}
 
-                                        <!-- Tombol [Resolve] membuka Modal Bootstrap Dark -->
-                                        <button type="button" class="btn btn-sm btn-success d-flex items-center gap-1 font-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#resolveModal{{ inc.id }}">
+                                        <button type="button" id="btn-resolve-{{ inc.id }}" class="btn btn-sm btn-success d-flex items-center gap-1 font-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#resolveModal{{ inc.id }}">
                                             <i class="bi bi-check2-square"></i>
                                             <span>Resolve</span>
                                         </button>
                                     {% else %}
-                                        <!-- Insiden Selesai -->
                                         <span class="badge bg-secondary bg-opacity-40 text-slate-300 border border-slate-700 py-1.5 px-3">
                                             <i class="bi bi-check-all text-success me-1"></i>Selesai
                                         </span>
                                     {% endif %}
                                 </div>
+                                {% if inc.status == 'RESOLVED' and inc.resolution_notes %}
+                                    <div class="small text-slate-500 mt-1 text-truncate ms-auto" style="max-width:14rem;" title="{{ inc.resolution_notes }}"><i class="bi bi-journal-text me-1"></i>{{ inc.resolution_notes }}</div>
+                                {% endif %}
                             </td>
                         </tr>
-
-                        <!-- =========================================================
-                             BOOTSTRAP 5 DARK MODAL FOR RESOLVE (Per Incident ID)
-                        ========================================================= -->
-                        {% if inc.status != 'RESOLVED' %}
-                        <div class="modal fade" id="resolveModal{{ inc.id }}" tabindex="-1" aria-labelledby="resolveModalLabel{{ inc.id }}" aria-hidden="true" data-bs-theme="dark">
-                            <div class="modal-dialog modal-dialog-centered">
-                                <div class="modal-content bg-slate-900 border border-slate-700 text-light shadow-2xl">
-                                    <div class="modal-header border-bottom border-slate-800">
-                                        <h5 class="modal-title font-bold text-white d-flex items-center gap-2" id="resolveModalLabel{{ inc.id }}">
-                                            <i class="bi bi-shield-check text-success fs-5"></i>
-                                            Resolve Tiket Insiden #INC-{{ inc.id }}
-                                        </h5>
-                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                                    </div>
-                                    <form action="/incidents/{{ inc.id }}/resolve" method="POST">
-                                        <div class="modal-body space-y-4">
-                                            <div class="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1">
-                                                <div class="d-flex justify-content-between text-xs">
-                                                    <span class="text-slate-400">Perangkat:</span>
-                                                    <strong class="text-white">{{ inc.device.name if inc.device else 'N/A' }}</strong>
-                                                </div>
-                                                <div class="d-flex justify-content-between text-xs">
-                                                    <span class="text-slate-400">Lokasi:</span>
-                                                    <span class="text-info fw-semibold">{{ inc.device.location_name if inc.device else 'N/A' }}</span>
-                                                </div>
-                                                <div class="d-flex justify-content-between text-xs">
-                                                    <span class="text-slate-400">Severity:</span>
-                                                    <span class="fw-bold {% if inc.severity == 'CRITICAL' %}text-danger{% else %}text-warning{% endif %}">{{ inc.severity }}</span>
-                                                </div>
-                                            </div>
-
-                                            <div>
-                                                <label class="form-label text-xs font-semibold text-slate-300 mb-1">
-                                                    Catatan Perbaikan / Root Cause Analysis (RCA) <span class="text-danger">*</span>
-                                                </label>
-                                                <textarea name="notes" rows="4" required placeholder="Masukkan dokumentasi penyebab utama masalah dan langkah tindakan perbaikan yang telah dilakukan oleh tim NOC..." class="form-control bg-slate-950 border-slate-700 text-white focus:border-success focus:ring-1 focus:ring-success text-sm"></textarea>
-                                            </div>
-                                        </div>
-                                        <div class="modal-footer border-top border-slate-800">
-                                            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
-                                            <button type="submit" class="btn btn-sm btn-success font-bold d-flex items-center gap-1.5 shadow">
-                                                <i class="bi bi-check-circle-fill"></i>
-                                                <span>Simpan RCA &amp; Resolve Tiket</span>
-                                            </button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-                        {% endif %}
-
                         {% endfor %}
                     {% else %}
                         <tr>
-                            <td colspan="8" class="text-center py-5 text-slate-500">
+                            <td colspan="10" class="text-center py-5 text-slate-500">
                                 <i class="bi bi-shield-check fs-1 text-slate-600 mb-2 d-block"></i>
                                 Belum ada catatan insiden yang terdaftar dalam sistem.
                             </td>
@@ -277,5 +319,98 @@
         </div>
     </div>
 
+    <!-- =========================================================
+         BOOTSTRAP 5 DARK MODAL FOR RESOLVE (Per Incident ID)
+         Dirender di luar <table> agar markup HTML valid.
+    ========================================================= -->
+    {% for inc in incidents if inc.status != 'RESOLVED' %}
+    <div class="modal fade ioc-modal" id="resolveModal{{ inc.id }}" tabindex="-1" aria-labelledby="resolveModalLabel{{ inc.id }}" aria-hidden="true" data-bs-theme="dark">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content text-light shadow-2xl">
+                <div class="modal-header border-bottom border-slate-800">
+                    <h5 class="modal-title font-bold text-white d-flex items-center gap-2" id="resolveModalLabel{{ inc.id }}">
+                        <i class="bi bi-shield-check text-success fs-5"></i>
+                        Resolve Tiket Insiden #INC-{{ inc.id }}
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form action="/incidents/{{ inc.id }}/resolve" method="POST">
+                    <div class="modal-body space-y-4">
+                        <div class="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1">
+                            <div class="d-flex justify-content-between text-xs">
+                                <span class="text-slate-400">Perangkat:</span>
+                                <strong class="text-white">{{ inc.device.name if inc.device else 'N/A' }}</strong>
+                            </div>
+                            <div class="d-flex justify-content-between text-xs">
+                                <span class="text-slate-400">Lokasi:</span>
+                                <span class="text-info fw-semibold">{{ inc.device.location_name if inc.device else 'N/A' }}</span>
+                            </div>
+                            <div class="d-flex justify-content-between text-xs">
+                                <span class="text-slate-400">Severity:</span>
+                                <span class="fw-bold {% if inc.severity == 'CRITICAL' %}text-danger{% else %}text-warning{% endif %}">{{ inc.severity }}</span>
+                            </div>
+                            <div class="d-flex justify-content-between text-xs">
+                                <span class="text-slate-400">Pemicu:</span>
+                                <span class="text-slate-200">{{ trigger_cause(inc) }}</span>
+                            </div>
+                            <div class="d-flex justify-content-between text-xs">
+                                <span class="text-slate-400">Down sejak:</span>
+                                <span class="text-slate-200 font-monospace">{{ inc.started_at.strftime('%Y-%m-%d %H:%M:%S') if inc.started_at else '-' }} WIB</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="form-label text-xs font-semibold text-slate-300 mb-1" for="resolve-notes-{{ inc.id }}">
+                                Catatan Perbaikan / Root Cause Analysis (RCA) <span class="text-danger">*</span>
+                            </label>
+                            <textarea id="resolve-notes-{{ inc.id }}" name="notes" rows="4" required placeholder="Masukkan dokumentasi penyebab utama masalah dan langkah tindakan perbaikan yang telah dilakukan oleh tim NOC..." class="form-control bg-slate-950 border-slate-700 text-white focus:border-success focus:ring-1 focus:ring-success text-sm"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-top border-slate-800">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-sm btn-success font-bold d-flex items-center gap-1.5 shadow">
+                            <i class="bi bi-check-circle-fill"></i>
+                            <span>Simpan RCA &amp; Resolve Tiket</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Validasi sisi klien: form GET membuka URL ekspor langsung, jadi input salah harus dicegah
+    // sebelum dikirim (kalau tidak, browser akan menampilkan halaman error JSON).
+    (function () {
+        const form = document.getElementById('form-export-range');
+        const startEl = document.getElementById('export-start-date');
+        const endEl = document.getElementById('export-end-date');
+        const errEl = document.getElementById('export-range-error');
+
+        function showError(msg) {
+            errEl.textContent = msg;
+            errEl.classList.remove('d-none');
+        }
+
+        form.addEventListener('submit', function (e) {
+            errEl.classList.add('d-none');
+            if (!startEl.value && !endEl.value) {
+                e.preventDefault();
+                showError('Isi minimal salah satu tanggal (Dari / Sampai), atau gunakan "Export Semua".');
+            } else if (startEl.value && endEl.value && startEl.value > endEl.value) {
+                e.preventDefault();
+                showError('Tanggal "Dari" tidak boleh lebih besar dari tanggal "Sampai".');
+            }
+        });
+
+        // Jaga konsistensi rentang saat salah satu tanggal diubah.
+        startEl.addEventListener('change', () => { if (startEl.value) endEl.min = startEl.value; });
+        endEl.addEventListener('change', () => { if (endEl.value) startEl.max = endEl.value; });
+    })();
+</script>
 {% endblock %}

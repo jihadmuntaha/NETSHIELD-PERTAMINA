@@ -1,20 +1,35 @@
 import io
+import os
 import re
 import csv
 import json
+import ipaddress
 import zipfile
 import xml.etree.ElementTree as ET
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.monitoring import MonitoredService, AuditLog, AreaZona, DeviceType
+from app.models.monitoring import MonitoredService, Device, AuditLog, AreaZona, DeviceType, SiteType
 from app.schemas.monitoring import ServiceCreate, ServiceUpdate, ServiceResponse
 
 router = APIRouter(prefix="/api/devices", tags=["Devices"])
+
+# Router web (form HTML) untuk halaman Inventory: /devices, /devices/add, /devices/upload-csv, dst.
+web_router = APIRouter(prefix="/devices", tags=["Devices Web"])
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+TEMPLATES_DIR = os.path.join(BASE_DIR, "app", "templates")
+if not os.path.exists(TEMPLATES_DIR):
+    TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
 def get_tag_name(elem: ET.Element) -> str:
@@ -464,6 +479,477 @@ def toggle_maintenance(device_id: int, request: Request, db: Session = Depends(g
     db.commit()
     db.refresh(device)
     return device
+
+
+# =============================================================================
+# WEB INVENTORY (FORM) — /devices
+# Halaman Inventory + Tambah / Edit / Hapus + Upload Bulk CSV.
+# =============================================================================
+
+MAX_CSV_BYTES = 2 * 1024 * 1024  # batas upload CSV: 2 MB
+LEVEL_MIN, LEVEL_MAX = 0, 3      # 0: WAN, 1: Core, 2: Distribution, 3: Access
+DEFAULT_LOCATION = "Regional HQ Semarang"
+DEFAULT_SITE_TYPE = SiteType.FUEL_TERMINAL.value
+SITE_TYPE_VALUES = [s.value for s in SiteType]
+CSV_REQUIRED_HEADERS = ("name", "ip_address")
+CSV_TEMPLATE_HEADERS = ("name", "ip_address", "device_type", "location_name", "site_type", "level", "parent_ip")
+
+_ENDPOINT_RE = re.compile(r"^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$")
+_NULL_TOKENS = {"", "none", "null", "nan", "nil", "-"}
+
+
+def parse_parent_id(raw: Any) -> Optional[int]:
+    """
+    Konversi input parent_id dari form ke int atau None (NULL di database).
+    String kosong, "None", "null", non-numerik, atau <= 0 dianggap tidak valid -> None,
+    sehingga tidak memicu IntegrityError / Foreign Key constraint error.
+    """
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if text.lower() in _NULL_TOKENS:
+        return None
+    try:
+        value = int(text)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def normalize_endpoint(raw: Any) -> Optional[str]:
+    """Validasi IPv4 (opsional :port, mis. 127.0.0.1:9090). Mengembalikan string ternormalisasi atau None."""
+    match = _ENDPOINT_RE.match(str(raw or "").strip())
+    if not match:
+        return None
+    host, port = match.group(1), match.group(2)
+    try:
+        ipaddress.IPv4Address(host)
+    except ValueError:
+        return None
+    if port is not None and not 1 <= int(port) <= 65535:
+        return None
+    return f"{host}:{int(port)}" if port is not None else host
+
+
+def parse_level(raw: Any, default: int = 0) -> int:
+    text = str(raw if raw is not None else "").strip()
+    if not text:
+        return default
+    try:
+        value = int(text)
+    except ValueError:
+        raise ValueError(f"level '{text}' harus berupa angka {LEVEL_MIN}-{LEVEL_MAX}")
+    if not LEVEL_MIN <= value <= LEVEL_MAX:
+        raise ValueError(f"level {value} di luar rentang {LEVEL_MIN}-{LEVEL_MAX}")
+    return value
+
+
+def parse_site_type(raw: Any) -> str:
+    text = str(raw or "").strip().upper().replace(" ", "_").replace("-", "_")
+    if not text:
+        return DEFAULT_SITE_TYPE
+    if text not in SITE_TYPE_VALUES:
+        raise ValueError(f"site_type '{raw}' tidak dikenal (pilih: {', '.join(SITE_TYPE_VALUES)})")
+    return text
+
+
+def parse_device_type_strict(raw: Any) -> DeviceType:
+    text = str(raw or "").strip().upper()
+    if not text:
+        return DeviceType.ROUTER
+    try:
+        return DeviceType(text)
+    except ValueError:
+        raise ValueError(f"device_type '{raw}' tidak dikenal (pilih: {', '.join(d.value for d in DeviceType)})")
+
+
+def creates_cycle(device_id: int, new_parent_id: int, parent_map: Dict[int, Optional[int]]) -> bool:
+    """True jika menjadikan new_parent_id sebagai parent device_id membentuk loop topologi."""
+    seen = set()
+    current: Optional[int] = new_parent_id
+    while current is not None and current not in seen:
+        if current == device_id:
+            return True
+        seen.add(current)
+        current = parent_map.get(current)
+    return False
+
+
+def _current_user(request: Request) -> str:
+    session = request.session if hasattr(request, "session") else {}
+    return (session.get("user") if session else None) or "Operator On-Duty"
+
+
+def _flash(request: Request, level: str, message: str, details: Optional[List[str]] = None) -> None:
+    """Simpan pesan satu-kali di session (dibaca & dihapus oleh halaman /devices)."""
+    details = [d[:160] for d in (details or [])]
+    if len(details) > 8:
+        extra = len(details) - 8
+        details = details[:8] + [f"... dan {extra} pesan lainnya"]
+    request.session["flash"] = {"level": level, "message": message, "details": details}
+
+
+def _audit(db: Session, request: Request, action: str) -> None:
+    db.add(AuditLog(
+        user_name=_current_user(request),
+        action=action[:100],
+        ip_address=request.client.host if request.client else "127.0.0.1",
+        timestamp=datetime.utcnow(),
+    ))
+
+
+def _back_to_inventory() -> RedirectResponse:
+    return RedirectResponse(url="/devices", status_code=status.HTTP_303_SEE_OTHER)
+
+
+def _build_device_fields(
+    db: Session,
+    *,
+    name: Optional[str],
+    ip_address: Optional[str],
+    device_type: Optional[str],
+    area: Optional[str],
+    location_name: Optional[str],
+    site_type: Optional[str],
+    level: Optional[str],
+    parent_id: Optional[str],
+    device_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Validasi & normalisasi input form Tambah/Edit. Raise ValueError berisi pesan untuk operator."""
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Nama perangkat wajib diisi.")
+    if len(name) > 100:
+        raise ValueError("Nama perangkat maksimal 100 karakter.")
+
+    ip = normalize_endpoint(ip_address)
+    if not ip:
+        raise ValueError(f"IP Address '{(ip_address or '').strip()}' tidak valid. Gunakan format IPv4, mis. 10.10.0.1")
+    duplicate = db.query(Device).filter(Device.ip_address == ip)
+    if device_id is not None:
+        duplicate = duplicate.filter(Device.id != device_id)
+    if duplicate.first():
+        raise ValueError(f"IP Address {ip} sudah dipakai perangkat lain.")
+
+    try:
+        dtype = parse_device_type_strict(device_type)
+        stype = parse_site_type(site_type)
+        level_val = parse_level(level)
+    except ValueError as exc:
+        raise ValueError(str(exc)[0].upper() + str(exc)[1:] + ".")
+
+    # parent_id: "", "None", atau tidak valid -> NULL. Parent harus ada; tidak boleh diri sendiri / loop.
+    parent = parse_parent_id(parent_id)
+    if parent is not None:
+        if device_id is not None and parent == device_id:
+            raise ValueError("Perangkat tidak boleh memilih dirinya sendiri sebagai parent.")
+        if db.query(Device.id).filter(Device.id == parent).first() is None:
+            parent = None
+        elif device_id is not None:
+            parent_map = dict(db.query(Device.id, Device.parent_id).all())
+            if creates_cycle(device_id, parent, parent_map):
+                raise ValueError("Parent yang dipilih adalah turunan perangkat ini (membentuk loop topologi).")
+
+    return {
+        "name": name,
+        "ip_address": ip,
+        "device_type": dtype,
+        "area": parse_area_value(area, name),
+        "location_name": (location_name or "").strip()[:100] or DEFAULT_LOCATION,
+        "site_type": stype,
+        "level": level_val,
+        "parent_id": parent,
+    }
+
+
+@web_router.get("", response_class=HTMLResponse)
+@web_router.get("/", response_class=HTMLResponse)
+def devices_inventory_view(request: Request, db: Session = Depends(get_db)):
+    """GET /devices: halaman Inventory perangkat (tabel + modal Tambah / Edit / Upload CSV)."""
+    devices = db.query(Device).order_by(Device.id.asc()).all()
+    flash = request.session.pop("flash", None)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="devices.html",
+        context={
+            "request": request,
+            "devices": devices,
+            "name_by_id": {d.id: d.name for d in devices},
+            "areas": [{"key": a.name, "label": a.value} for a in AreaZona],
+            "site_types": SITE_TYPE_VALUES,
+            "device_types": [d.value for d in DeviceType],
+            "csv_headers": ",".join(CSV_TEMPLATE_HEADERS),
+            "flash": flash,
+            "active_page": "devices",
+            "user": _current_user(request),
+            "app_name": os.getenv("APP_NAME", "Pertamina NetShield"),
+        },
+    )
+
+
+@web_router.post("/add")
+def add_device_form(
+    request: Request,
+    name: Optional[str] = Form(None),
+    ip_address: Optional[str] = Form(None),
+    device_type: Optional[str] = Form(None),
+    area: Optional[str] = Form(None),
+    location_name: Optional[str] = Form(None),
+    site_type: Optional[str] = Form(None),
+    level: Optional[str] = Form(None),
+    parent_id: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """POST /devices/add: simpan perangkat baru (termasuk location_name, site_type, level, parent_id)."""
+    try:
+        fields = _build_device_fields(
+            db, name=name, ip_address=ip_address, device_type=device_type, area=area,
+            location_name=location_name, site_type=site_type, level=level, parent_id=parent_id,
+        )
+        device = Device(**fields, status="UP", response_time_ms=0.0, is_maintenance=False)
+        db.add(device)
+        _audit(db, request, f"Created device: {fields['name']} ({fields['ip_address']})")
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        _flash(request, "danger", str(exc))
+        return _back_to_inventory()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        _flash(request, "danger", f"Gagal menyimpan perangkat ke database: {exc.__class__.__name__}")
+        return _back_to_inventory()
+
+    _flash(request, "success", f"Perangkat '{fields['name']}' ({fields['ip_address']}) berhasil ditambahkan.")
+    return _back_to_inventory()
+
+
+@web_router.post("/upload-csv")
+async def upload_devices_csv(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """
+    POST /devices/upload-csv: impor massal perangkat dari CSV.
+
+    Header: name,ip_address,device_type,location_name,site_type,level,parent_ip
+    - IP yang sudah ada di database (atau duplikat di dalam file) dilewati.
+    - parent_ip dipetakan ke parent_id setelah seluruh baris dibuat, sehingga parent boleh
+      muncul di baris mana pun (atau sudah ada di database sebelumnya).
+    """
+    filename = file.filename or ""
+    if not filename.lower().endswith(".csv"):
+        _flash(request, "danger", "File harus berekstensi .csv")
+        return _back_to_inventory()
+
+    raw = await file.read()
+    if not raw:
+        _flash(request, "danger", "File CSV kosong.")
+        return _back_to_inventory()
+    if len(raw) > MAX_CSV_BYTES:
+        _flash(request, "danger", f"Ukuran file melebihi batas {MAX_CSV_BYTES // (1024 * 1024)} MB.")
+        return _back_to_inventory()
+
+    try:
+        text = raw.decode("utf-8-sig")  # utf-8-sig membuang BOM bawaan Excel
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1")
+
+    lines = text.splitlines()
+    first_line = lines[0] if lines else ""
+    delimiter = ";" if first_line.count(";") > first_line.count(",") else ","  # Excel locale Indonesia
+
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    headers = [(h or "").strip().lower() for h in (reader.fieldnames or [])]
+    missing = [h for h in CSV_REQUIRED_HEADERS if h not in headers]
+    if missing:
+        _flash(
+            request, "danger",
+            f"Header CSV tidak lengkap, kolom wajib hilang: {', '.join(missing)}.",
+            [f"Header yang diharapkan: {','.join(CSV_TEMPLATE_HEADERS)}"],
+        )
+        return _back_to_inventory()
+
+    def clean(value: Any) -> str:
+        return value.strip() if isinstance(value, str) else ""
+
+    ip_to_id: Dict[str, Optional[int]] = {ip: dev_id for ip, dev_id in db.query(Device.ip_address, Device.id).all()}
+    created: List[tuple] = []  # (Device, parent_ip, nomor_baris)
+    skipped_existing = 0
+    errors: List[str] = []
+    warnings: List[str] = []
+
+    # --- Pass 1: buat seluruh perangkat (parent_id dikosongkan dulu) ---
+    for line_no, row in enumerate(reader, start=2):
+        row = {(k or "").strip().lower(): clean(v) for k, v in row.items() if k is not None}
+        if not any(row.values()):
+            continue  # baris kosong
+
+        try:
+            name = row.get("name", "")
+            if not name:
+                raise ValueError("kolom name kosong")
+            if len(name) > 100:
+                raise ValueError("name lebih dari 100 karakter")
+            ip = normalize_endpoint(row.get("ip_address"))
+            if not ip:
+                raise ValueError(f"ip_address '{row.get('ip_address', '')}' tidak valid")
+            if ip in ip_to_id:
+                skipped_existing += 1
+                continue
+            dtype = parse_device_type_strict(row.get("device_type"))
+            stype = parse_site_type(row.get("site_type"))
+            level_val = parse_level(row.get("level"))
+        except ValueError as exc:
+            errors.append(f"Baris {line_no}: {exc}")
+            continue
+
+        location = row.get("location_name", "")[:100] or DEFAULT_LOCATION
+        device = Device(
+            name=name,
+            ip_address=ip,
+            device_type=dtype,
+            area=infer_area_zona(name, location),
+            location_name=location,
+            site_type=stype,
+            level=level_val,
+            parent_id=None,
+            status="UP",
+            response_time_ms=0.0,
+            is_maintenance=False,
+        )
+        db.add(device)
+        created.append((device, row.get("parent_ip", ""), line_no))
+        ip_to_id[ip] = None  # cadangkan IP agar duplikat di dalam file ikut terlewati
+
+    try:
+        db.flush()  # beri ID pada perangkat baru agar parent_ip bisa dipetakan
+
+        for device, _, _ in created:
+            ip_to_id[device.ip_address] = device.id
+
+        # --- Pass 2: petakan parent_ip -> parent_id ---
+        parent_map = dict(db.query(Device.id, Device.parent_id).all())
+        for device, parent_ip, line_no in created:
+            if parent_ip.strip().lower() in _NULL_TOKENS:
+                continue
+            parent_norm = normalize_endpoint(parent_ip)
+            parent_id = ip_to_id.get(parent_norm) if parent_norm else None
+            if parent_id is None:
+                warnings.append(f"Baris {line_no}: parent_ip '{parent_ip}' tidak ditemukan, parent dikosongkan.")
+            elif parent_id == device.id:
+                warnings.append(f"Baris {line_no}: parent_ip sama dengan IP perangkat itu sendiri, diabaikan.")
+            elif creates_cycle(device.id, parent_id, parent_map):
+                warnings.append(f"Baris {line_no}: parent_ip '{parent_ip}' membentuk loop topologi, diabaikan.")
+            else:
+                device.parent_id = parent_id
+                parent_map[device.id] = parent_id
+
+        if created:
+            _audit(db, request, f"Bulk CSV import '{filename}': added {len(created)} devices")
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        _flash(request, "danger", f"Import CSV dibatalkan karena kesalahan database: {exc.__class__.__name__}")
+        return _back_to_inventory()
+
+    summary = (
+        f"Import CSV selesai: {len(created)} perangkat ditambahkan, "
+        f"{skipped_existing} dilewati (IP sudah ada), {len(errors)} baris ditolak."
+    )
+    level = "success" if created and not errors else ("warning" if created or skipped_existing else "danger")
+    _flash(request, level, summary, errors + warnings)
+    return _back_to_inventory()
+
+
+@web_router.get("/csv-template")
+def download_csv_template():
+    """GET /devices/csv-template: contoh file CSV untuk Bulk Upload."""
+    sample = (
+        ",".join(CSV_TEMPLATE_HEADERS) + "\n"
+        "Core-Router-WAN,10.10.0.1,ROUTER,Regional HQ Semarang,REGIONAL_OFFICE,0,\n"
+        "Dist-Switch-L2,10.10.2.1,SWITCH,Regional HQ Semarang,REGIONAL_OFFICE,2,10.10.0.1\n"
+        "CCTV-Gate-Masuk,10.4.12.50,CCTV,FT Pengapon,FUEL_TERMINAL,3,10.10.2.1\n"
+    )
+    return Response(
+        content="\ufeff" + sample,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="NetShield_Devices_Template.csv"'},
+    )
+
+
+@web_router.post("/{device_id}/edit")
+def edit_device_form(
+    device_id: int,
+    request: Request,
+    name: Optional[str] = Form(None),
+    ip_address: Optional[str] = Form(None),
+    device_type: Optional[str] = Form(None),
+    area: Optional[str] = Form(None),
+    location_name: Optional[str] = Form(None),
+    site_type: Optional[str] = Form(None),
+    level: Optional[str] = Form(None),
+    parent_id: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """POST /devices/{device_id}/edit: ubah perangkat (parent tidak boleh diri sendiri / turunannya)."""
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if not device:
+        _flash(request, "danger", f"Perangkat dengan ID #{device_id} tidak ditemukan.")
+        return _back_to_inventory()
+
+    try:
+        fields = _build_device_fields(
+            db, name=name, ip_address=ip_address, device_type=device_type, area=area,
+            location_name=location_name, site_type=site_type, level=level, parent_id=parent_id,
+            device_id=device_id,
+        )
+        for key, value in fields.items():
+            setattr(device, key, value)
+        _audit(db, request, f"Updated device ID {device_id} ({fields['name']})")
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        _flash(request, "danger", str(exc))
+        return _back_to_inventory()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        _flash(request, "danger", f"Gagal menyimpan perubahan ke database: {exc.__class__.__name__}")
+        return _back_to_inventory()
+
+    _flash(request, "success", f"Perangkat '{fields['name']}' berhasil diperbarui.")
+    return _back_to_inventory()
+
+
+@web_router.post("/{device_id}/delete")
+def delete_device_form(device_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    POST /devices/{device_id}/delete: hapus perangkat.
+
+    Perangkat anak (child) dinaikkan ke parent dari perangkat yang dihapus, bukan ikut terhapus
+    (relasi children memakai cascade delete-orphan). Riwayat insiden perangkat ikut dihapus.
+    """
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if not device:
+        _flash(request, "danger", f"Perangkat dengan ID #{device_id} tidak ditemukan.")
+        return _back_to_inventory()
+
+    name, ip, grandparent_id = device.name, device.ip_address, device.parent_id
+    try:
+        # Dieksekusi langsung (bukan lewat relationship) agar tidak memicu cascade ke anak-anaknya.
+        reparented = (
+            db.query(Device)
+            .filter(Device.parent_id == device_id)
+            .update({Device.parent_id: grandparent_id}, synchronize_session=False)
+        )
+        db.delete(device)
+        _audit(db, request, f"Deleted device ID {device_id}: {name} ({ip})")
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        _flash(request, "danger", f"Gagal menghapus perangkat: {exc.__class__.__name__}")
+        return _back_to_inventory()
+
+    suffix = f" {reparented} perangkat turunan dipindahkan ke parent di atasnya." if reparented else ""
+    _flash(request, "success", f"Perangkat '{name}' ({ip}) berhasil dihapus.{suffix}")
+    return _back_to_inventory()
 
 
 audit_router = APIRouter(prefix="/api/audit-logs", tags=["Audit Logs"])

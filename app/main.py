@@ -27,8 +27,9 @@ app = FastAPI(
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    # Whitelist endpoints: /login, /static, /webhook
-    whitelist_prefixes = ["/login", "/static", "/webhook"]
+    # Whitelist endpoints: /login, /static, webhook WhatsApp (Fonnte memanggil tanpa session).
+    # Endpoint lain (termasuk /devices/upload-csv & /incidents/export/csv) wajib login.
+    whitelist_prefixes = ["/login", "/static", "/webhook", "/api/v1/webhook"]
     is_whitelisted = any(path.startswith(prefix) for prefix in whitelist_prefixes) or path == "/favicon.ico"
 
     if is_whitelisted:
@@ -54,6 +55,7 @@ if os.path.exists(static_dir):
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(devices.router)
+app.include_router(devices.web_router)
 app.include_router(incidents.router)
 app.include_router(incidents.api_router)
 app.include_router(incidents.v1_router)

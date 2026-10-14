@@ -1,157 +1,492 @@
 {% extends "base.html" %}
 
-{% block title %}Device Management Inventory{% endblock %}
+{% block title %}Inventory Perangkat{% endblock %}
 
 {% block content %}
+<style>
+    .noc-card { background:#0f172a; border:1px solid #1e293b; border-radius:1rem; }
+    .noc-modal .modal-content { background:#0f172a; border:1px solid #334155; color:#e2e8f0; border-radius:1rem; box-shadow:0 25px 60px rgba(0,0,0,.65); }
+    .noc-modal .modal-header, .noc-modal .modal-footer { border-color:#1e293b; }
+    .noc-modal .btn-close { filter: invert(1) grayscale(100%) brightness(200%); }
+    .noc-label { display:block; font-size:.7rem; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:.3rem; }
+    .noc-input { background:#020617 !important; border:1px solid #334155 !important; color:#f1f5f9 !important; font-size:.85rem; }
+    .noc-input::placeholder { color:#475569; }
+    .noc-input:focus { border-color:#3b82f6 !important; box-shadow:0 0 0 .2rem rgba(59,130,246,.25) !important; }
+    .noc-table { width:100%; border-collapse:collapse; }
+    .noc-table thead th { background:#020617; color:#94a3b8; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; padding:.8rem 1rem; border-bottom:1px solid #1e293b; white-space:nowrap; }
+    .noc-table tbody td { padding:.85rem 1rem; border-bottom:1px solid rgba(30,41,59,.7); vertical-align:middle; }
+    .noc-table tbody tr { transition:background .15s ease; }
+    .noc-table tbody tr:hover { background:rgba(30,41,59,.55); }
+    .noc-chip { display:inline-flex; align-items:center; gap:.35rem; padding:.18rem .55rem; border-radius:999px; font-size:.7rem; font-weight:700; border:1px solid transparent; white-space:nowrap; }
+    .noc-ip { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.75rem; padding:.15rem .5rem; border-radius:.4rem; background:#1e293b; color:#60a5fa; border:1px solid #334155; }
+    .noc-dropzone { border:2px dashed #334155; border-radius:.9rem; background:rgba(2,6,23,.6); transition:border-color .2s, background .2s; cursor:pointer; }
+    .noc-dropzone:hover, .noc-dropzone.is-dragover { border-color:#10b981; background:rgba(16,185,129,.06); }
+    .noc-action { width:2rem; height:2rem; display:inline-flex; align-items:center; justify-content:center; border-radius:.5rem; border:1px solid #334155; background:#1e293b; color:#94a3b8; transition:all .15s ease; font-size:.8rem; }
+    .noc-action:hover { transform:translateY(-1px); color:#fff; }
+    .noc-action.edit { background:rgba(37,99,235,.12); border-color:rgba(59,130,246,.3); color:#60a5fa; }
+    .noc-action.edit:hover { background:rgba(37,99,235,.28); }
+    .noc-action.del { background:rgba(220,38,38,.12); border-color:rgba(239,68,68,.3); color:#f87171; }
+    .noc-action.del:hover { background:rgba(220,38,38,.3); }
+    .noc-action.maint.active { background:rgba(245,158,11,.18); border-color:rgba(245,158,11,.4); color:#fbbf24; }
+</style>
+
+{# ---- Field set dipakai bersama oleh modal Tambah & Edit (prefix id: add / edit) ---- #}
+{% macro device_fields(p) %}
+<div class="row g-3">
+    <div class="col-12">
+        <label class="noc-label" for="{{ p }}-name">Nama Perangkat <span class="text-danger">*</span></label>
+        <input id="{{ p }}-name" name="name" type="text" maxlength="100" required placeholder="Contoh: HQ-Core-Router-WAN" class="form-control noc-input">
+    </div>
+    <div class="col-md-6">
+        <label class="noc-label" for="{{ p }}-ip">IP Address (IPv4) <span class="text-danger">*</span></label>
+        <input id="{{ p }}-ip" name="ip_address" type="text" required pattern="^(\d{1,3}\.){3}\d{1,3}(:\d{1,5})?$" placeholder="Contoh: 10.10.0.1" class="form-control noc-input font-monospace">
+    </div>
+    <div class="col-md-6">
+        <label class="noc-label" for="{{ p }}-device-type">Jenis Perangkat <span class="text-danger">*</span></label>
+        <select id="{{ p }}-device-type" name="device_type" required class="form-select noc-input">
+            {% for t in device_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        </select>
+    </div>
+    <div class="col-md-6">
+        <label class="noc-label" for="{{ p }}-location">Lokasi Operasional <span class="text-danger">*</span></label>
+        <input id="{{ p }}-location" name="location_name" type="text" maxlength="100" required placeholder="Contoh: Regional HQ Semarang" class="form-control noc-input">
+    </div>
+    <div class="col-md-6">
+        <label class="noc-label" for="{{ p }}-site-type">Tipe Site <span class="text-danger">*</span></label>
+        <select id="{{ p }}-site-type" name="site_type" required class="form-select noc-input">
+            {% for st in site_types %}<option value="{{ st }}">{{ st|replace('_', ' ') }}</option>{% endfor %}
+        </select>
+    </div>
+    <div class="col-md-6">
+        <label class="noc-label" for="{{ p }}-level">Level Topologi <span class="text-danger">*</span></label>
+        <select id="{{ p }}-level" name="level" required class="form-select noc-input">
+            <option value="0">0 &mdash; WAN</option>
+            <option value="1">1 &mdash; Core</option>
+            <option value="2">2 &mdash; Distribution</option>
+            <option value="3">3 &mdash; Access</option>
+        </select>
+    </div>
+    <div class="col-md-6">
+        <label class="noc-label" for="{{ p }}-area">Zona Area</label>
+        <select id="{{ p }}-area" name="area" class="form-select noc-input">
+            {% for a in areas %}<option value="{{ a.key }}">{{ a.label }}</option>{% endfor %}
+        </select>
+    </div>
+    <div class="col-12">
+        <label class="noc-label" for="{{ p }}-parent">Parent (Upstream Device)</label>
+        <select id="{{ p }}-parent" name="parent_id" class="form-select noc-input">
+            <option value="">&mdash; Tanpa parent (root) &mdash;</option>
+            {% for pd in devices %}<option value="{{ pd.id }}">{{ pd.name }} ({{ pd.ip_address }})</option>{% endfor %}
+        </select>
+    </div>
+</div>
+{% endmacro %}
+
+{% set total_dev = devices | length %}
+{% set maint_dev = devices | selectattr('is_maintenance') | list | length %}
+{% set up_dev = devices | rejectattr('is_maintenance') | selectattr('status', 'in', ['UP', 'NORMAL']) | list | length %}
+{% set down_dev = total_dev - maint_dev - up_dev %}
+{% set level_labels = {0: 'WAN', 1: 'Core', 2: 'Distribution', 3: 'Access'} %}
+
 <!-- Page Header -->
-<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
     <div>
         <h2 class="text-2xl font-bold text-white tracking-wide flex items-center gap-3">
-            <i class="fa-solid fa-network-wired text-blue-500"></i>
-            <span>Device Inventory Management</span>
+            <i class="bi bi-hdd-network-fill text-blue-500"></i>
+            <span>Inventory Perangkat</span>
         </h2>
-        <p class="text-sm text-slate-400">Pengelolaan Seluruh Perangkat Jaringan &amp; Kamera CCTV FT Pengapon</p>
+        <p class="text-sm text-slate-400 mb-0">Pengelolaan seluruh perangkat jaringan &amp; kamera CCTV Pertamina Patra Niaga JBT</p>
     </div>
-    <div class="flex items-center gap-3">
-        <button onclick="openAddDeviceModal()" class="px-4 py-2 text-sm font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/30 transition flex items-center gap-2">
-            <i class="fa-solid fa-plus"></i>
-            <span>Tambah Perangkat Baru</span>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+        <button type="button" id="btn-open-add" data-bs-toggle="modal" data-bs-target="#addDeviceModal" class="btn btn-primary btn-sm fw-bold px-3 py-2 d-flex align-items-center gap-2 shadow">
+            <i class="bi bi-plus-circle-fill"></i><span>Tambah Perangkat</span>
         </button>
-        <a href="/import-assets" class="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition flex items-center gap-2">
-            <i class="fa-solid fa-file-import text-emerald-400"></i>
-            <span>Assets Import</span>
+        <button type="button" id="btn-open-upload" data-bs-toggle="modal" data-bs-target="#uploadCsvModal" class="btn btn-success btn-sm fw-bold px-3 py-2 d-flex align-items-center gap-2 shadow">
+            <i class="bi bi-file-earmark-arrow-up-fill"></i><span>Upload Bulk CSV</span>
+        </button>
+        <a href="/import-assets" class="btn btn-outline-secondary btn-sm fw-semibold px-3 py-2 d-flex align-items-center gap-2">
+            <i class="bi bi-file-earmark-code"></i><span>Assets Import (KMZ/JSON/XLSX)</span>
         </a>
     </div>
 </div>
 
-<!-- INVENTORY CARD & TABLE -->
-<div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-5">
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-        <div class="relative flex-1 max-w-md">
-            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-            <input type="text" id="search-device" onkeyup="filterInventoryTable()" placeholder="Cari nama perangkat atau IP Address..." class="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+<!-- Flash message (hasil Tambah / Edit / Hapus / Upload CSV) -->
+{% if flash %}
+<div id="flash-alert" class="alert alert-{{ flash.level }} alert-dismissible fade show mb-0 shadow-sm" role="alert">
+    <div class="fw-semibold">
+        {% if flash.level == 'success' %}<i class="bi bi-check-circle-fill me-2"></i>{% elif flash.level == 'warning' %}<i class="bi bi-exclamation-triangle-fill me-2"></i>{% else %}<i class="bi bi-x-octagon-fill me-2"></i>{% endif %}{{ flash.message }}
+    </div>
+    {% if flash.details %}
+    <ul class="mb-0 mt-2 small ps-4">
+        {% for line in flash.details %}<li>{{ line }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Tutup"></button>
+</div>
+{% endif %}
+
+<!-- Ringkasan -->
+<div class="row g-3">
+    <div class="col-6 col-lg-3">
+        <div class="noc-card p-3 d-flex align-items-center justify-content-between">
+            <div><div class="noc-label mb-1">Total Perangkat</div><div class="fs-3 fw-black text-white lh-1" id="stat-total">{{ total_dev }}</div></div>
+            <span class="noc-chip" style="background:rgba(59,130,246,.12);color:#60a5fa;border-color:rgba(59,130,246,.25);"><i class="bi bi-hdd-rack-fill"></i></span>
         </div>
-        <div class="flex flex-wrap items-center gap-3">
-            <select id="filter-zone" onchange="filterInventoryTable()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="noc-card p-3 d-flex align-items-center justify-content-between">
+            <div><div class="noc-label mb-1">Online</div><div class="fs-3 fw-black text-success lh-1">{{ up_dev }}</div></div>
+            <span class="noc-chip" style="background:rgba(16,185,129,.12);color:#34d399;border-color:rgba(16,185,129,.25);"><i class="bi bi-check-circle-fill"></i></span>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="noc-card p-3 d-flex align-items-center justify-content-between">
+            <div><div class="noc-label mb-1">Offline / Bermasalah</div><div class="fs-3 fw-black text-danger lh-1">{{ down_dev }}</div></div>
+            <span class="noc-chip" style="background:rgba(239,68,68,.12);color:#f87171;border-color:rgba(239,68,68,.25);"><i class="bi bi-x-circle-fill"></i></span>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="noc-card p-3 d-flex align-items-center justify-content-between">
+            <div><div class="noc-label mb-1">Maintenance</div><div class="fs-3 fw-black text-warning lh-1">{{ maint_dev }}</div></div>
+            <span class="noc-chip" style="background:rgba(245,158,11,.12);color:#fbbf24;border-color:rgba(245,158,11,.25);"><i class="bi bi-wrench-adjustable"></i></span>
+        </div>
+    </div>
+</div>
+
+<!-- INVENTORY TABLE -->
+<div class="noc-card shadow-lg overflow-hidden">
+    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 p-3 border-bottom" style="border-color:#1e293b !important;">
+        <div class="position-relative flex-grow-1" style="max-width:26rem;">
+            <i class="bi bi-search position-absolute top-50 translate-middle-y text-secondary" style="left:.85rem;font-size:.8rem;"></i>
+            <input type="text" id="search-device" onkeyup="filterInventoryTable()" placeholder="Cari nama, IP, atau lokasi..." class="form-control form-control-sm noc-input" style="padding-left:2.2rem;">
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <select id="filter-zone" onchange="filterInventoryTable()" class="form-select form-select-sm noc-input" style="width:auto;">
                 <option value="ALL">Semua Zona</option>
-                <option value="Zona 1 - Gate &amp; Main Office">Zona 1 - Gate &amp; Main Office</option>
-                <option value="Zona 2 - Tank Farm (Tangki Timbun)">Zona 2 - Tank Farm</option>
-                <option value="Zona 3 - Filling Shed (Loading Bay)">Zona 3 - Filling Shed</option>
-                <option value="Zona 4 - IT Server Room &amp; Core Network">Zona 4 - IT Server Room</option>
+                {% for a in areas %}<option value="{{ a.label }}">{{ a.label }}</option>{% endfor %}
             </select>
-            <select id="filter-type" onchange="filterInventoryTable()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <select id="filter-type" onchange="filterInventoryTable()" class="form-select form-select-sm noc-input" style="width:auto;">
                 <option value="ALL">Semua Jenis</option>
-                <option value="ROUTER">📶 ROUTER</option>
-                <option value="SWITCH">🔀 SWITCH</option>
-                <option value="CCTV">🎥 CCTV</option>
+                {% for t in device_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
             </select>
         </div>
     </div>
 
-    <div class="overflow-x-auto">
-        <table class="w-full text-left text-sm text-slate-300">
-            <thead class="bg-slate-950 text-xs uppercase text-slate-400 border-b border-slate-800">
-                <tr>
-                    <th class="py-3 px-4 font-semibold">ID</th>
-                    <th class="py-3 px-4 font-semibold">Nama Perangkat</th>
-                    <th class="py-3 px-4 font-semibold">IP Address</th>
-                    <th class="py-3 px-4 font-semibold">Zona Area</th>
-                    <th class="py-3 px-4 font-semibold">Jenis</th>
-                    <th class="py-3 px-4 font-semibold">Status Monitoring</th>
-                    <th class="py-3 px-4 font-semibold text-right">Aksi Manajerial</th>
+    <div class="table-responsive">
+        <table class="noc-table text-sm" id="inventory-table">
+            <thead>
+                <tr class="text-start">
+                    <th>ID</th>
+                    <th>Perangkat</th>
+                    <th>Lokasi &amp; Site</th>
+                    <th>Level</th>
+                    <th>Parent</th>
+                    <th>Jenis</th>
+                    <th>Status</th>
+                    <th class="text-end">Aksi</th>
                 </tr>
             </thead>
-            <tbody id="inventory-tbody" class="divide-y divide-slate-800/60 font-medium">
-                {% for s in services %}
-                <tr class="hover:bg-slate-800/40 transition inv-row" data-name="{{ s.name|lower }}" data-ip="{{ s.ip_address }}" data-zone="{{ s.area }}" data-type="{{ s.device_type }}">
-                    <td class="py-3.5 px-4 font-mono text-xs text-slate-500">#{{ s.id }}</td>
-                    <td class="py-3.5 px-4 font-bold text-white">{{ s.name }}</td>
-                    <td class="py-3.5 px-4"><code class="px-2 py-0.5 rounded bg-slate-800 text-blue-400 text-xs border border-slate-700 font-mono">{{ s.ip_address }}</code></td>
-                    <td class="py-3.5 px-4 text-xs text-slate-400">{{ s.area }}</td>
-                    <td class="py-3.5 px-4">
-                        {% set d_type = s.device_type %}
-                        {% if d_type == 'ROUTER' %}
-                        <span class="px-2 py-0.5 text-xs font-semibold rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">📶 ROUTER</span>
-                        {% elif d_type == 'SWITCH' %}
-                        <span class="px-2 py-0.5 text-xs font-semibold rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">🔀 SWITCH</span>
+            <tbody id="inventory-tbody">
+                {% for d in devices %}
+                {% set dtype = d.device_type.value if d.device_type else '' %}
+                {% set zone_label = d.area.value if d.area else '' %}
+                <tr class="inv-row" data-name="{{ d.name|lower }}" data-ip="{{ d.ip_address }}" data-loc="{{ (d.location_name or '')|lower }}" data-zone="{{ zone_label }}" data-type="{{ dtype }}">
+                    <td class="font-monospace text-secondary small">#{{ d.id }}</td>
+                    <td>
+                        <div class="fw-bold text-white">{{ d.name }}</div>
+                        <span class="noc-ip">{{ d.ip_address }}</span>
+                    </td>
+                    <td>
+                        <div class="text-info fw-semibold small"><i class="bi bi-geo-alt-fill me-1"></i>{{ d.location_name or '-' }}</div>
+                        <div class="text-secondary" style="font-size:.7rem;">{{ (d.site_type or '')|replace('_', ' ') }}{% if zone_label %} &middot; {{ zone_label }}{% endif %}</div>
+                    </td>
+                    <td>
+                        <span class="noc-chip" style="background:rgba(148,163,184,.1);color:#cbd5e1;border-color:rgba(148,163,184,.25);">L{{ d.level }} &middot; {{ level_labels.get(d.level, '?') }}</span>
+                    </td>
+                    <td class="small">
+                        {% if d.parent_id and name_by_id.get(d.parent_id) %}
+                        <span class="text-light"><i class="bi bi-diagram-2 me-1 text-secondary"></i>{{ name_by_id.get(d.parent_id) }}</span>
                         {% else %}
-                        <span class="px-2 py-0.5 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">🎥 CCTV</span>
+                        <span class="text-secondary fst-italic">root</span>
                         {% endif %}
                     </td>
-                    <td class="py-3.5 px-4">
-                        {% if s.is_maintenance %}
-                        <span class="px-2.5 py-1 text-xs font-bold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">MAINTENANCE</span>
-                        {% elif s.status == 'UP' %}
-                        <span class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">ONLINE (UP)</span>
+                    <td>
+                        {% if dtype == 'ROUTER' %}
+                        <span class="noc-chip" style="background:rgba(59,130,246,.1);color:#60a5fa;border-color:rgba(59,130,246,.25);"><i class="bi bi-router-fill"></i>ROUTER</span>
+                        {% elif dtype == 'SWITCH' %}
+                        <span class="noc-chip" style="background:rgba(168,85,247,.1);color:#c084fc;border-color:rgba(168,85,247,.25);"><i class="bi bi-ethernet"></i>SWITCH</span>
                         {% else %}
-                        <span class="px-2.5 py-1 text-xs font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">OFFLINE (DOWN)</span>
+                        <span class="noc-chip" style="background:rgba(245,158,11,.1);color:#fbbf24;border-color:rgba(245,158,11,.25);"><i class="bi bi-camera-video-fill"></i>{{ dtype or 'CCTV' }}</span>
                         {% endif %}
                     </td>
-                    <td class="py-3.5 px-4 text-right">
-                        <div class="flex items-center justify-end gap-1.5">
-                            <!-- Toggle Maintenance -->
-                            <button data-device-id="{{ s.id }}" onclick="toggleMaintenance(this.getAttribute('data-device-id'))"
-                                title="{{ 'Nonaktifkan Maintenance' if s.is_maintenance else 'Aktifkan Maintenance' }}"
-                                class="px-2.5 py-1.5 text-xs font-semibold rounded-lg {% if s.is_maintenance %}bg-amber-600/20 text-amber-400 border border-amber-500/30 hover:bg-amber-600/30{% else %}bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700{% endif %} transition">
-                                <i class="fa-solid fa-wrench"></i>
-                            </button>
-                            <!-- Edit -->
-                            <button
-                                data-id="{{ s.id }}"
-                                data-name="{{ s.name }}"
-                                data-ip="{{ s.ip_address }}"
-                                data-area="{{ s.area }}"
-                                data-dtype="{{ s.device_type }}"
-                                onclick="openEditDeviceBtn(this)"
-                                title="Edit Perangkat"
-                                class="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-blue-600/10 text-blue-400 border border-blue-500/20 hover:bg-blue-600/20 transition">
-                                <i class="fa-solid fa-pen-to-square"></i>
-                            </button>
-                            <!-- Delete -->
-                            <button
-                                data-device-id="{{ s.id }}"
-                                data-device-name="{{ s.name }}"
-                                onclick="openDeleteModal(this.getAttribute('data-device-id'), this.getAttribute('data-device-name'))"
-                                title="Hapus Perangkat"
-                                class="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-red-600/10 text-red-400 border border-red-500/20 hover:bg-red-600/20 transition">
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
+                    <td>
+                        {% if d.is_maintenance %}
+                        <span class="noc-chip" style="background:rgba(245,158,11,.15);color:#fbbf24;border-color:rgba(245,158,11,.3);"><i class="bi bi-wrench"></i>MAINTENANCE</span>
+                        {% elif d.status in ['UP', 'NORMAL'] %}
+                        <span class="noc-chip" style="background:rgba(16,185,129,.15);color:#34d399;border-color:rgba(16,185,129,.3);"><i class="bi bi-circle-fill" style="font-size:.5rem;"></i>ONLINE</span>
+                        {% elif d.status == 'WARNING' %}
+                        <span class="noc-chip" style="background:rgba(234,179,8,.15);color:#facc15;border-color:rgba(234,179,8,.3);"><i class="bi bi-exclamation-triangle-fill"></i>WARNING</span>
+                        {% else %}
+                        <span class="noc-chip animate-pulse" style="background:rgba(239,68,68,.15);color:#f87171;border-color:rgba(239,68,68,.3);"><i class="bi bi-circle-fill" style="font-size:.5rem;"></i>OFFLINE</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <div class="d-inline-flex align-items-center gap-1">
+                            <button type="button" data-device-id="{{ d.id }}" onclick="toggleMaintenance(this.dataset.deviceId)"
+                                title="{{ 'Nonaktifkan Maintenance' if d.is_maintenance else 'Aktifkan Maintenance' }}"
+                                class="noc-action maint {% if d.is_maintenance %}active{% endif %}"><i class="bi bi-wrench"></i></button>
+                            <button type="button" id="btn-edit-{{ d.id }}" title="Edit Perangkat" class="noc-action edit"
+                                data-bs-toggle="modal" data-bs-target="#editDeviceModal"
+                                data-id="{{ d.id }}"
+                                data-name="{{ d.name }}"
+                                data-ip="{{ d.ip_address }}"
+                                data-type="{{ dtype }}"
+                                data-location="{{ d.location_name or '' }}"
+                                data-site="{{ d.site_type or '' }}"
+                                data-level="{{ d.level if d.level is not none else 0 }}"
+                                data-area="{{ d.area.name if d.area else '' }}"
+                                data-parent="{{ d.parent_id or '' }}"><i class="bi bi-pencil-square"></i></button>
+                            <button type="button" id="btn-delete-{{ d.id }}" title="Hapus Perangkat" class="noc-action del"
+                                data-bs-toggle="modal" data-bs-target="#deleteDeviceModal"
+                                data-id="{{ d.id }}" data-name="{{ d.name }}" data-ip="{{ d.ip_address }}"><i class="bi bi-trash3-fill"></i></button>
                         </div>
                     </td>
                 </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-center py-5 text-secondary">
+                    <i class="bi bi-hdd-network fs-1 d-block mb-2"></i>Belum ada perangkat terdaftar. Klik <strong>Tambah Perangkat</strong> atau <strong>Upload Bulk CSV</strong>.
+                </td></tr>
                 {% endfor %}
+                <tr id="inv-empty-filter" class="d-none"><td colspan="8" class="text-center py-4 text-secondary">Tidak ada perangkat yang cocok dengan filter.</td></tr>
             </tbody>
         </table>
     </div>
 </div>
 
+<!-- =========================================================
+     MODAL: TAMBAH PERANGKAT
+========================================================= -->
+<div class="modal fade noc-modal" id="addDeviceModal" tabindex="-1" aria-labelledby="addDeviceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <form id="add-device-form" action="/devices/add" method="post" autocomplete="off">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2" id="addDeviceModalLabel">
+                        <i class="bi bi-plus-circle-fill text-primary"></i>Tambah Perangkat Baru
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                </div>
+                <div class="modal-body">{{ device_fields('add') }}</div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" id="add-device-submit" class="btn btn-sm btn-primary fw-bold px-3"><i class="bi bi-floppy-fill me-1"></i>Simpan Perangkat</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- =========================================================
+     MODAL: EDIT PERANGKAT (nilai terisi otomatis dari baris tabel)
+========================================================= -->
+<div class="modal fade noc-modal" id="editDeviceModal" tabindex="-1" aria-labelledby="editDeviceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <form id="edit-device-form" action="/devices/0/edit" method="post" autocomplete="off">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2" id="editDeviceModalLabel">
+                        <i class="bi bi-pencil-square text-info"></i>Edit Perangkat <span id="edit-device-badge" class="noc-ip">#</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                </div>
+                <div class="modal-body">{{ device_fields('edit') }}</div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" id="edit-device-submit" class="btn btn-sm btn-info fw-bold px-3"><i class="bi bi-check2-circle me-1"></i>Simpan Perubahan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- =========================================================
+     MODAL: UPLOAD BULK CSV
+========================================================= -->
+<div class="modal fade noc-modal" id="uploadCsvModal" tabindex="-1" aria-labelledby="uploadCsvModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <form id="upload-csv-form" action="/devices/upload-csv" method="post" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2" id="uploadCsvModalLabel">
+                        <i class="bi bi-file-earmark-arrow-up-fill text-success"></i>Upload Bulk CSV
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="noc-dropzone p-4 text-center" id="csv-dropzone">
+                        <i class="bi bi-cloud-arrow-up-fill fs-1 text-success d-block mb-2"></i>
+                        <div class="fw-semibold text-light">Klik atau seret file <code class="text-success">.csv</code> ke sini</div>
+                        <div class="small text-secondary mt-1" id="csv-file-label">Belum ada file dipilih (maks. 2 MB)</div>
+                        <input type="file" id="csv-file-input" name="file" accept=".csv,text/csv" required class="d-none">
+                    </div>
+
+                    <div class="mt-3 p-3 rounded-3" style="background:#020617;border:1px solid #1e293b;">
+                        <div class="noc-label">Header CSV yang diharapkan</div>
+                        <code class="d-block small text-info text-break" id="csv-expected-header">{{ csv_headers }}</code>
+                        <ul class="small text-secondary mt-2 mb-2 ps-3">
+                            <li><code>name</code> &amp; <code>ip_address</code> wajib diisi; IP yang sudah terdaftar akan <strong>dilewati</strong>.</li>
+                            <li><code>device_type</code>: {{ device_types|join(' / ') }} &nbsp;|&nbsp; <code>level</code>: 0&ndash;3</li>
+                            <li><code>site_type</code>: {{ site_types|join(' / ') }}</li>
+                            <li><code>parent_ip</code>: IP perangkat induk (boleh berada di baris mana pun atau sudah ada di database). Kosongkan untuk root.</li>
+                        </ul>
+                        <a href="/devices/csv-template" id="link-csv-template" class="small fw-semibold text-decoration-none"><i class="bi bi-download me-1"></i>Unduh template CSV</a>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" id="upload-csv-submit" class="btn btn-sm btn-success fw-bold px-3"><i class="bi bi-upload me-1"></i>Upload &amp; Import</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- =========================================================
+     MODAL: KONFIRMASI HAPUS
+========================================================= -->
+<div class="modal fade noc-modal" id="deleteDeviceModal" tabindex="-1" aria-labelledby="deleteDeviceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form id="delete-device-form" action="/devices/0/delete" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2" id="deleteDeviceModalLabel">
+                        <i class="bi bi-exclamation-octagon-fill text-danger"></i>Hapus Perangkat
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">Anda akan menghapus <strong id="delete-device-name" class="text-white"></strong> <span id="delete-device-ip" class="noc-ip"></span>.</p>
+                    <ul class="small text-secondary ps-3 mb-0">
+                        <li>Seluruh <strong>riwayat insiden</strong> perangkat ini ikut terhapus.</li>
+                        <li>Perangkat turunan (child) <strong>tidak</strong> dihapus; parent-nya dinaikkan satu level.</li>
+                    </ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" id="delete-device-submit" class="btn btn-sm btn-danger fw-bold px-3"><i class="bi bi-trash3-fill me-1"></i>Ya, Hapus</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
+    // ---------- Filter tabel ----------
     function filterInventoryTable() {
         const query = document.getElementById('search-device').value.toLowerCase().trim();
         const zoneVal = document.getElementById('filter-zone').value;
         const typeVal = document.getElementById('filter-type').value;
+        let visible = 0;
 
         document.querySelectorAll('.inv-row').forEach(row => {
-            const matchName = !query || row.dataset.name.includes(query) || row.dataset.ip.includes(query);
+            const matchText = !query || row.dataset.name.includes(query) || row.dataset.ip.includes(query) || row.dataset.loc.includes(query);
             const matchZone = (zoneVal === 'ALL' || row.dataset.zone === zoneVal);
             const matchType = (typeVal === 'ALL' || row.dataset.type === typeVal);
-            row.style.display = (matchName && matchZone && matchType) ? '' : 'none';
+            const show = matchText && matchZone && matchType;
+            row.style.display = show ? '' : 'none';
+            if (show) visible++;
         });
-    }
 
-    function openEditDeviceBtn(btn) {
-        openAddDeviceModal({
-            id: btn.dataset.id,
-            name: btn.dataset.name,
-            ip_address: btn.dataset.ip,
-            area: btn.dataset.area,
-            device_type: btn.dataset.dtype
-        });
+        const empty = document.getElementById('inv-empty-filter');
+        if (empty && document.querySelectorAll('.inv-row').length > 0) {
+            empty.classList.toggle('d-none', visible > 0);
+        }
     }
 
     async function toggleMaintenance(deviceId) {
         const res = await fetch(`/api/devices/${deviceId}/toggle-maintenance`, { method: 'POST' });
         if (res.ok) window.location.reload();
     }
+
+    // Cegah submit ganda & beri umpan balik saat form dikirim.
+    function lockOnSubmit(formId, buttonId, label) {
+        const form = document.getElementById(formId);
+        if (!form) return;
+        form.addEventListener('submit', () => {
+            const btn = document.getElementById(buttonId);
+            if (!btn) return;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>' + label;
+        });
+    }
+    lockOnSubmit('add-device-form', 'add-device-submit', 'Menyimpan...');
+    lockOnSubmit('edit-device-form', 'edit-device-submit', 'Menyimpan...');
+    lockOnSubmit('upload-csv-form', 'upload-csv-submit', 'Mengimpor...');
+    lockOnSubmit('delete-device-form', 'delete-device-submit', 'Menghapus...');
+
+    // ---------- Modal Tambah: selalu mulai dari form bersih ----------
+    document.getElementById('addDeviceModal').addEventListener('show.bs.modal', () => {
+        document.getElementById('add-device-form').reset();
+    });
+
+    // ---------- Modal Edit: isi otomatis dari data-* tombol pemicu ----------
+    document.getElementById('editDeviceModal').addEventListener('show.bs.modal', (event) => {
+        const btn = event.relatedTarget;
+        if (!btn) return;
+        const d = btn.dataset;
+
+        document.getElementById('edit-device-form').action = `/devices/${d.id}/edit`;
+        document.getElementById('edit-device-badge').textContent = '#' + d.id;
+        document.getElementById('edit-name').value = d.name || '';
+        document.getElementById('edit-ip').value = d.ip || '';
+        document.getElementById('edit-device-type').value = d.type || 'ROUTER';
+        document.getElementById('edit-location').value = d.location || '';
+        document.getElementById('edit-site-type').value = d.site || '';
+        document.getElementById('edit-level').value = d.level || '0';
+        if (d.area) document.getElementById('edit-area').value = d.area;
+
+        // Perangkat tidak boleh menjadi parent bagi dirinya sendiri.
+        const parentSel = document.getElementById('edit-parent');
+        parentSel.querySelectorAll('option').forEach(opt => {
+            const isSelf = opt.value === d.id;
+            opt.disabled = isSelf;
+            opt.hidden = isSelf;
+        });
+        parentSel.value = d.parent || '';
+    });
+
+    // ---------- Modal Hapus ----------
+    document.getElementById('deleteDeviceModal').addEventListener('show.bs.modal', (event) => {
+        const btn = event.relatedTarget;
+        if (!btn) return;
+        document.getElementById('delete-device-form').action = `/devices/${btn.dataset.id}/delete`;
+        document.getElementById('delete-device-name').textContent = btn.dataset.name;
+        document.getElementById('delete-device-ip').textContent = btn.dataset.ip;
+    });
+
+    // ---------- Upload CSV: dropzone + nama file ----------
+    (function () {
+        const zone = document.getElementById('csv-dropzone');
+        const input = document.getElementById('csv-file-input');
+        const label = document.getElementById('csv-file-label');
+        const showFile = () => {
+            if (input.files && input.files[0]) {
+                const f = input.files[0];
+                label.textContent = f.name + ' (' + (f.size / 1024).toFixed(1) + ' KB)';
+            } else {
+                label.textContent = 'Belum ada file dipilih (maks. 2 MB)';
+            }
+        };
+        zone.addEventListener('click', () => input.click());
+        input.addEventListener('change', showFile);
+        ['dragenter', 'dragover'].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.add('is-dragover'); }));
+        ['dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.remove('is-dragover'); }));
+        zone.addEventListener('drop', e => {
+            if (e.dataTransfer.files.length) { input.files = e.dataTransfer.files; showFile(); }
+        });
+        document.getElementById('uploadCsvModal').addEventListener('show.bs.modal', () => { input.value = ''; showFile(); });
+    })();
 </script>
 {% endblock %}

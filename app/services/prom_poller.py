@@ -5,6 +5,7 @@ import httpx
 
 from app.database import SessionLocal
 from app.models.monitoring import MonitoredService, IncidentLog, AreaZona, DeviceType
+from app.core.timeutil import now_wib
 from app.services.notifier import send_incident_alert, send_recovery_alert
 
 logger = logging.getLogger("netshield_prom_poller")
@@ -12,6 +13,17 @@ logger = logging.getLogger("netshield_prom_poller")
 PROMETHEUS_SERVER_URL = "http://127.0.0.1:9090"
 PROMETHEUS_QUERY_URL = "http://127.0.0.1:9090/api/v1/query"
 POLL_INTERVAL_SEC = 3
+
+# Status tiket yang masih dianggap "aktif" (belum RESOLVED). IN_PROGRESS wajib ikut
+# agar tiket yang sudah di-Klaim operator tidak diduplikasi / tetap bisa auto-recover.
+ACTIVE_INCIDENT_STATUSES = ["NEW", "ACKNOWLEDGED", "IN_PROGRESS"]
+
+
+def _stamp_ttr(inc: IncidentLog, resolved_dt: datetime) -> datetime:
+    """Isi ttr_seconds (durasi Down -> Up) saat tiket ditutup otomatis; kembalikan resolved_dt."""
+    if inc.started_at:
+        inc.ttr_seconds = max((resolved_dt - inc.started_at).total_seconds(), 0.0)
+    return resolved_dt
 
 
 def _match_area_zone(zone_str: str) -> AreaZona:
@@ -78,7 +90,7 @@ async def evaluate_device_status_and_latency(db, service: MonitoredService, stat
     - Status == 1 & rtt_ms > 200.0: Tiket WARNING ("High Latency Detected ({rtt_ms} ms)", latency_ms=rtt_ms) + Alert WA WARNING
     - Status == 1 & rtt_ms <= 200.0: Auto-Recovery insiden WARNING/CRITICAL aktif -> RESOLVED + Alert WA Recovery
     """
-    now = datetime.now()
+    now = now_wib()
 
     if status_val == 0:
         # =========================================================================
@@ -92,8 +104,8 @@ async def evaluate_device_status_and_latency(db, service: MonitoredService, stat
         active_critical = (
             db.query(IncidentLog)
             .filter(
-                IncidentLog.service_id == service.id,
-                IncidentLog.status.in_(["NEW", "ACKNOWLEDGED"]),
+                IncidentLog.device_id == service.id,
+                IncidentLog.status.in_(ACTIVE_INCIDENT_STATUSES),
                 IncidentLog.severity == "CRITICAL"
             )
             .first()
@@ -104,15 +116,15 @@ async def evaluate_device_status_and_latency(db, service: MonitoredService, stat
             active_warnings = (
                 db.query(IncidentLog)
                 .filter(
-                    IncidentLog.service_id == service.id,
-                    IncidentLog.status.in_(["NEW", "ACKNOWLEDGED"]),
+                    IncidentLog.device_id == service.id,
+                    IncidentLog.status.in_(ACTIVE_INCIDENT_STATUSES),
                     IncidentLog.severity == "WARNING"
                 )
                 .all()
             )
             for w_inc in active_warnings:
                 w_inc.status = "RESOLVED"
-                w_inc.resolved_at = now
+                w_inc.resolved_at = _stamp_ttr(w_inc, now)
 
             new_inc = IncidentLog(
                 service_id=service.id,
@@ -146,8 +158,8 @@ async def evaluate_device_status_and_latency(db, service: MonitoredService, stat
         active_warning = (
             db.query(IncidentLog)
             .filter(
-                IncidentLog.service_id == service.id,
-                IncidentLog.status.in_(["NEW", "ACKNOWLEDGED"]),
+                IncidentLog.device_id == service.id,
+                IncidentLog.status.in_(ACTIVE_INCIDENT_STATUSES),
                 IncidentLog.severity == "WARNING"
             )
             .first()
@@ -188,8 +200,8 @@ async def evaluate_device_status_and_latency(db, service: MonitoredService, stat
         active_incidents = (
             db.query(IncidentLog)
             .filter(
-                IncidentLog.service_id == service.id,
-                IncidentLog.status.in_(["NEW", "ACKNOWLEDGED"])
+                IncidentLog.device_id == service.id,
+                IncidentLog.status.in_(ACTIVE_INCIDENT_STATUSES)
             )
             .all()
         )
@@ -201,7 +213,7 @@ async def evaluate_device_status_and_latency(db, service: MonitoredService, stat
 
             for inc in active_incidents:
                 inc.status = "RESOLVED"
-                inc.resolved_at = resolved_dt
+                inc.resolved_at = _stamp_ttr(inc, resolved_dt)
 
             db.commit()
 
@@ -293,7 +305,7 @@ async def monitor_prometheus_targets():
                     # SERVER PROMETHEUS NYALA (UP)
                     # =========================================================
                     prom_service.status = "UP"
-                    prom_service.last_check = datetime.now()
+                    prom_service.last_check = now_wib()
                     prom_service.response_time_ms = 1.8
 
                     if prev_status == "DOWN":
@@ -301,15 +313,15 @@ async def monitor_prometheus_targets():
                         open_incidents = (
                             db.query(IncidentLog)
                             .filter(
-                                IncidentLog.service_id == prom_service.id,
-                                IncidentLog.status.in_(["NEW", "ACKNOWLEDGED"])
+                                IncidentLog.device_id == prom_service.id,
+                                IncidentLog.status.in_(ACTIVE_INCIDENT_STATUSES)
                             )
                             .all()
                         )
-                        resolved_dt = datetime.now()
+                        resolved_dt = now_wib()
                         for inc in open_incidents:
                             inc.status = "RESOLVED"
-                            inc.resolved_at = resolved_dt
+                            inc.resolved_at = _stamp_ttr(inc, resolved_dt)
 
                         db.commit()
                         logger.info(
@@ -328,7 +340,7 @@ async def monitor_prometheus_targets():
                     # SERVER PROMETHEUS MATI / KILLED IN CMD (DOWN)
                     # =========================================================
                     prom_service.status = "DOWN"
-                    prom_service.last_check = datetime.now()
+                    prom_service.last_check = now_wib()
                     prom_service.response_time_ms = 0.0
 
                     if prev_status == "UP":
@@ -340,7 +352,7 @@ async def monitor_prometheus_targets():
                             service_id=prom_service.id,
                             severity=severity,
                             status="NEW",
-                            created_at=datetime.now()
+                            created_at=now_wib()
                         )
                         new_incident.is_acknowledged = False
 

@@ -137,24 +137,6 @@ def import_assets_view(request: Request, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/devices", response_class=HTMLResponse)
-def devices_inventory_view(request: Request, db: Session = Depends(get_db)):
-    """Render Device Inventory Management web page."""
-    services = db.query(MonitoredService).all()
-    user = request.session.get("user", "Operator On-Duty") if hasattr(request, "session") and request.session else "Operator On-Duty"
-
-    return templates.TemplateResponse(
-        request=request,
-        name="devices.html",
-        context={
-            "services": services,
-            "active_page": "devices",
-            "user": user,
-            "app_name": os.getenv("APP_NAME", "Pertamina NetShield")
-        }
-    )
-
-
 @router.get("/audit", response_class=HTMLResponse)
 def audit_view(request: Request, db: Session = Depends(get_db)):
     """Render Audit Logs & System Configuration web page."""
