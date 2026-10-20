@@ -27,6 +27,8 @@
         .bg-dark-noc { background-color: #0f172a; }
         .bg-dark-card { background-color: #1e293b; border-color: #334155; }
     </style>
+    <!-- Page-specific head assets (CSS, meta) -->
+    {% block head %}{% endblock %}
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex">
 
@@ -35,21 +37,29 @@
     ========================================================= -->
     <aside class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0 h-screen sticky top-0 z-40">
         <div>
-            <!-- Brand Header -->
-            <div class="p-5 border-b border-slate-800 flex items-center gap-3">
-                <div class="w-10 h-10 rounded-lg bg-red-600 flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-red-900/50">
+            <!-- Brand Header (klik untuk kembali ke Portal Hub) -->
+            <a href="/portal" id="brand-home" title="Kembali ke Command Center Hub" class="p-5 border-b border-slate-800 flex items-center gap-3 hover:bg-slate-800/40 transition group">
+                <div class="w-10 h-10 rounded-lg bg-red-600 flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-red-900/50 group-hover:scale-105 transition">
                     <i class="bi bi-shield-lock-fill"></i>
                 </div>
                 <div>
-                    <h1 class="font-extrabold tracking-wider text-base text-white leading-tight">PERTAMINA <span class="text-red-500">NETSHIELD</span></h1>
+                    <span class="block font-extrabold tracking-wider text-base text-white leading-tight">PERTAMINA <span class="text-red-500">NETSHIELD</span></span>
                     <p class="text-xs text-slate-400 font-medium">Region Jawa Bagian Tengah</p>
                 </div>
-            </div>
+            </a>
 
-            <!-- Nav Links: Overview, Incident Center, Inventory -->
+            <!-- Nav Links: Portal Hub, Overview, Incident Center, Inventory -->
             <nav class="p-4 space-y-1.5" id="main-nav">
+                <!-- 0. Portal / Hub -->
+                <a href="/portal" id="nav-portal" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'portal' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
+                    <i class="bi bi-grid-3x3-gap-fill w-5 text-center {% if active_page == 'portal' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
+                    <span>Portal / Hub</span>
+                </a>
+
+                <div class="pt-2 pb-1 px-4 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Workspace</div>
+
                 <!-- 1. Overview -->
-                <a href="/" id="nav-overview" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'noc' or active_page == 'overview' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
+                <a href="/overview" id="nav-overview" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'noc' or active_page == 'overview' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
                     <i class="bi bi-speedometer2 w-5 text-center {% if active_page == 'noc' or active_page == 'overview' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
                     <span>Overview</span>
                 </a>
@@ -86,7 +96,11 @@
         <header class="h-16 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-6 flex items-center justify-between sticky top-0 z-30">
             <div class="flex items-center gap-4">
                 <div class="flex items-center gap-2 text-sm font-semibold">
-                    <a href="/" class="hover:text-red-400 transition {% if active_page == 'noc' or active_page == 'overview' %}text-red-400 font-bold{% else %}text-slate-300{% endif %}">
+                    <a href="/portal" id="topnav-portal" class="hover:text-red-400 transition {% if active_page == 'portal' %}text-red-400 font-bold{% else %}text-slate-300{% endif %}">
+                        <i class="bi bi-grid-3x3-gap-fill me-1"></i>Portal / Hub
+                    </a>
+                    <span class="text-slate-600">|</span>
+                    <a href="/overview" id="topnav-overview" class="hover:text-red-400 transition {% if active_page == 'noc' or active_page == 'overview' %}text-red-400 font-bold{% else %}text-slate-300{% endif %}">
                         <i class="bi bi-grid-1x2-fill me-1"></i>Overview
                     </a>
                     <span class="text-slate-600">|</span>

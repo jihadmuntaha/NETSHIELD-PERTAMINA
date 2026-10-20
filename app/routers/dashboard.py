@@ -55,9 +55,10 @@ def calculate_zone_summary(services: List[MonitoredService]) -> List[Dict[str, A
     return list(summary_map.values())
 
 
+@router.get("/overview", response_class=HTMLResponse)
 @router.get("/noc", response_class=HTMLResponse)
 def noc_dashboard(request: Request, db: Session = Depends(get_db)):
-    """Render NOC Dashboard web page."""
+    """Render NOC Dashboard (Regional Overview) web page. Tersedia di /overview dan /noc."""
     services = db.query(MonitoredService).all()
     incidents = (
         db.query(IncidentLog)

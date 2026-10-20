@@ -2,8 +2,9 @@ import os
 import asyncio
 import logging
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import engine, Base, run_migrations
@@ -51,6 +52,13 @@ static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+# Templates directory (selaras dengan router lain: app/templates, fallback ke templates/)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TEMPLATES_DIR = os.path.join(BASE_DIR, "app", "templates")
+if not os.path.exists(TEMPLATES_DIR):
+    TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
 # Include Routers
 app.include_router(auth.router)
 app.include_router(dashboard.router)
@@ -88,7 +96,38 @@ async def on_startup():
     asyncio.create_task(monitor_prometheus_targets())
 
 
+def _session_user(request: Request):
+    """Ambil username operator dari session (None jika belum login)."""
+    return request.session.get("user") if "session" in request.scope else None
+
+
+def _route_exists(path: str) -> bool:
+    """Cek apakah sebuah path sudah terdaftar di aplikasi (untuk modul opsional di portal)."""
+    return any(getattr(route, "path", None) == path for route in app.routes)
+
+
 @app.get("/")
-def root_redirect():
-    """Redirect root path to NOC dashboard."""
-    return RedirectResponse(url="/noc")
+def root_redirect(request: Request):
+    """Root: operator yang sudah login diarahkan ke Portal Hub, selain itu ke halaman login."""
+    if _session_user(request):
+        return RedirectResponse(url="/portal", status_code=303)
+    return RedirectResponse(url="/login", status_code=303)
+
+
+@app.get("/portal", response_class=HTMLResponse)
+def portal_hub(request: Request):
+    """Portal Gateway / Command Center Hub - halaman pemilihan modul kerja setelah login."""
+    user = _session_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="portal.html",
+        context={
+            "active_page": "portal",
+            "user": user,
+            "toolkit_available": _route_exists("/toolkit"),
+            "app_name": os.getenv("APP_NAME", "Pertamina NetShield"),
+        },
+    )

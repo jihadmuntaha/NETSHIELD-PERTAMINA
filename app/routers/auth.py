@@ -20,10 +20,10 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 def login_page(request: Request):
     """
     GET /login: Render login.html page if unauthenticated.
-    If already logged in, redirect to NOC dashboard.
+    If already logged in, redirect to Portal Hub.
     """
     if get_current_user(request):
-        return RedirectResponse(url="/", status_code=303)
+        return RedirectResponse(url="/portal", status_code=303)
 
     error = request.query_params.get("error")
     error_msg = None
@@ -48,11 +48,11 @@ def login_action(
     password: str = Form(...)
 ):
     """
-    POST /login: Validate Form credentials, store session, and redirect to dashboard.
+    POST /login: Validate Form credentials, store session, and redirect to Portal Hub.
     """
     if verify_credentials(username, password):
         request.session["user"] = username
-        return RedirectResponse(url="/", status_code=303)
+        return RedirectResponse(url="/portal", status_code=303)
 
     return templates.TemplateResponse(
         request=request,

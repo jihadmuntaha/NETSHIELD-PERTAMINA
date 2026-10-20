@@ -1,0 +1,475 @@
+{% extends "base.html" %}
+
+{% block title %}Command Center Hub{% endblock %}
+
+{% block head %}
+<meta name="description" content="NetShield Operations Portal - Command Center Hub Pertamina Patra Niaga JBT untuk akses cepat ke modul monitoring, insiden, diagnostik, dan inventaris jaringan.">
+<style>
+    /* =========================================================
+       PORTAL HUB - Dark NOC Theme
+    ========================================================= */
+    :root {
+        --portal-bg: #0b1329;
+        --portal-surface: rgba(15, 23, 42, 0.78);
+        --portal-border: rgba(51, 65, 85, 0.65);
+        --portal-red: #ed1c24;
+        --portal-blue: #0054a6;
+        --portal-green: #00a859;
+    }
+
+    /* ---------- Hero header ---------- */
+    .portal-hero {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--portal-border);
+        border-radius: 1rem;
+        background:
+            radial-gradient(1200px 300px at 0% 0%, rgba(237, 28, 36, 0.16), transparent 60%),
+            radial-gradient(900px 300px at 100% 100%, rgba(0, 84, 166, 0.22), transparent 60%),
+            linear-gradient(135deg, #0f172a 0%, #0b1329 100%);
+    }
+    .portal-hero::before {
+        /* NOC grid backdrop */
+        content: "";
+        position: absolute; inset: 0;
+        background-image:
+            linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+        background-size: 28px 28px;
+        mask-image: linear-gradient(180deg, rgba(0,0,0,0.9), transparent 95%);
+        pointer-events: none;
+    }
+    .portal-hero::after {
+        /* scanning line */
+        content: "";
+        position: absolute; left: 0; right: 0; height: 120px; top: -120px;
+        background: linear-gradient(180deg, transparent, rgba(237, 28, 36, 0.07), transparent);
+        animation: portalScan 6s linear infinite;
+        pointer-events: none;
+    }
+    @keyframes portalScan { to { transform: translateY(420px); } }
+
+    .portal-tricolor {
+        height: 3px; width: 100%;
+        background: linear-gradient(90deg, var(--portal-blue) 0 33%, var(--portal-green) 33% 66%, var(--portal-red) 66% 100%);
+    }
+
+    .portal-eyebrow {
+        font-size: 0.68rem;
+        letter-spacing: 0.22em;
+        font-weight: 800;
+        color: #f87171;
+    }
+    .portal-title {
+        background: linear-gradient(90deg, #ffffff 0%, #e2e8f0 45%, #fca5a5 100%);
+        -webkit-background-clip: text; background-clip: text;
+        color: transparent;
+    }
+
+    /* ---------- Session / status pills ---------- */
+    .portal-pill {
+        display: inline-flex; align-items: center; gap: 0.5rem;
+        padding: 0.45rem 0.85rem;
+        border-radius: 0.6rem;
+        border: 1px solid var(--portal-border);
+        background: rgba(30, 41, 59, 0.6);
+        backdrop-filter: blur(6px);
+        font-size: 0.75rem; font-weight: 600; color: #cbd5e1;
+    }
+    .portal-dot { width: 0.55rem; height: 0.55rem; border-radius: 9999px; position: relative; }
+    .portal-dot::after {
+        content: ""; position: absolute; inset: -4px; border-radius: inherit;
+        background: inherit; opacity: 0.35; animation: portalPing 1.8s ease-out infinite;
+    }
+    @keyframes portalPing { 0% { transform: scale(0.6); opacity: 0.5; } 100% { transform: scale(1.8); opacity: 0; } }
+    .portal-dot.is-online  { background: #10b981; }
+    .portal-dot.is-offline { background: #ef4444; }
+    .portal-dot.is-pending { background: #f59e0b; }
+
+    /* ---------- Workspace cards ---------- */
+    .ws-card {
+        --accent: 237, 28, 36;
+        position: relative;
+        display: flex; flex-direction: column;
+        border-radius: 1rem;
+        border: 1px solid var(--portal-border);
+        background: var(--portal-surface);
+        overflow: hidden;
+        transition: transform .28s cubic-bezier(.2,.8,.2,1), border-color .28s, box-shadow .28s;
+        opacity: 0; transform: translateY(14px);
+        animation: wsIn .55s cubic-bezier(.2,.8,.2,1) forwards;
+    }
+    .ws-card:nth-child(1) { animation-delay: .05s; }
+    .ws-card:nth-child(2) { animation-delay: .12s; }
+    .ws-card:nth-child(3) { animation-delay: .19s; }
+    .ws-card:nth-child(4) { animation-delay: .26s; }
+    @keyframes wsIn { to { opacity: 1; transform: translateY(0); } }
+
+    .ws-card::before {
+        /* accent glow following cursor */
+        content: "";
+        position: absolute; inset: 0;
+        background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 0%), rgba(var(--accent), 0.14), transparent 45%);
+        opacity: 0; transition: opacity .3s;
+        pointer-events: none;
+    }
+    .ws-card::after {
+        /* top accent bar */
+        content: "";
+        position: absolute; top: 0; left: 0; right: 0; height: 2px;
+        background: linear-gradient(90deg, transparent, rgba(var(--accent), 0.9), transparent);
+        transform: scaleX(0.25); opacity: .5;
+        transition: transform .35s, opacity .35s;
+    }
+    .ws-card:hover, .ws-card:focus-within {
+        transform: translateY(-6px);
+        border-color: rgba(var(--accent), 0.55);
+        box-shadow: 0 18px 40px -18px rgba(var(--accent), 0.55), 0 0 0 1px rgba(var(--accent), 0.15) inset;
+    }
+    .ws-card:hover::before, .ws-card:focus-within::before { opacity: 1; }
+    .ws-card:hover::after,  .ws-card:focus-within::after  { transform: scaleX(1); opacity: 1; }
+
+    .ws-card.accent-red     { --accent: 239, 68, 68; }
+    .ws-card.accent-amber   { --accent: 245, 158, 11; }
+    .ws-card.accent-cyan    { --accent: 34, 211, 238; }
+    .ws-card.accent-emerald { --accent: 16, 185, 129; }
+
+    .ws-icon {
+        width: 3.25rem; height: 3.25rem;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 0.85rem;
+        font-size: 1.5rem;
+        color: rgb(var(--accent));
+        background: rgba(var(--accent), 0.1);
+        border: 1px solid rgba(var(--accent), 0.28);
+        transition: transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .35s;
+    }
+    .ws-card:hover .ws-icon { transform: rotate(-6deg) scale(1.08); box-shadow: 0 0 24px rgba(var(--accent), 0.35); }
+
+    .ws-index {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.7rem; font-weight: 700;
+        color: #64748b;
+        border: 1px solid var(--portal-border);
+        border-radius: 0.4rem;
+        padding: 0.1rem 0.4rem;
+    }
+
+    .ws-chip {
+        font-size: 0.66rem; font-weight: 600;
+        padding: 0.2rem 0.5rem;
+        border-radius: 9999px;
+        color: #cbd5e1;
+        background: rgba(51, 65, 85, 0.45);
+        border: 1px solid rgba(71, 85, 105, 0.5);
+    }
+
+    .ws-metric {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.72rem;
+        color: #94a3b8;
+    }
+    .ws-metric strong { color: #f1f5f9; font-weight: 700; }
+
+    .ws-btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+        width: 100%;
+        padding: 0.65rem 1rem;
+        border-radius: 0.65rem;
+        font-size: 0.82rem; font-weight: 700;
+        color: #fff;
+        background: linear-gradient(135deg, rgba(var(--accent), 0.95), rgba(var(--accent), 0.7));
+        border: 1px solid rgba(var(--accent), 0.6);
+        box-shadow: 0 8px 20px -10px rgba(var(--accent), 0.8);
+        transition: filter .2s, transform .2s;
+    }
+    .ws-btn:hover { filter: brightness(1.12); }
+    .ws-btn:active { transform: scale(0.98); }
+    .ws-btn i.bi-arrow-right { transition: transform .25s; }
+    .ws-card:hover .ws-btn i.bi-arrow-right { transform: translateX(4px); }
+    .ws-btn[aria-disabled="true"] {
+        cursor: not-allowed; filter: grayscale(0.85) brightness(0.7); box-shadow: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .ws-card, .portal-hero::after, .portal-dot::after { animation: none !important; opacity: 1; transform: none; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set operator = user or request.session.get('user', 'Teknisi NOC') %}
+
+<!-- =========================================================
+     HERO / WELCOME HEADER
+========================================================= -->
+<section class="portal-hero" aria-labelledby="portal-title">
+    <div class="portal-tricolor"></div>
+    <div class="relative z-10 p-6 md:p-8 flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+        <div class="space-y-3">
+            <p class="portal-eyebrow uppercase flex items-center gap-2">
+                <i class="bi bi-broadcast-pin"></i>
+                PERTAMINA PATRA NIAGA JBT - COMMAND CENTER HUB
+            </p>
+            <h1 id="portal-title" class="portal-title text-3xl md:text-4xl font-extrabold tracking-tight">
+                NetShield Operations Portal
+            </h1>
+            <p class="text-sm text-slate-400 max-w-2xl">
+                Selamat datang kembali, <strong class="text-white">{{ operator }}</strong>.
+                Pilih workspace di bawah untuk memulai sesi operasional jaringan Region Jawa Bagian Tengah.
+            </p>
+        </div>
+
+        <!-- Session info -->
+        <div class="flex flex-wrap items-center gap-2.5" id="portal-session-info">
+            <span class="portal-pill" title="Operator aktif">
+                <i class="bi bi-person-badge-fill text-red-400"></i>
+                <span>Operator: <strong class="text-white" id="portal-operator">{{ operator }}</strong></span>
+            </span>
+            <span class="portal-pill" id="portal-link-status" title="Status koneksi ke NetShield Core API">
+                <span class="portal-dot is-pending" id="portal-link-dot"></span>
+                <span id="portal-link-label">Memeriksa koneksi…</span>
+            </span>
+            <span class="portal-pill" title="Waktu sinkronisasi terakhir">
+                <i class="bi bi-clock-history text-sky-400"></i>
+                <span>Sync: <strong class="text-white" id="portal-last-sync">--:--:--</strong></span>
+            </span>
+        </div>
+    </div>
+</section>
+
+<!-- =========================================================
+     WORKSPACE MODULE CARDS
+========================================================= -->
+<section aria-labelledby="ws-heading">
+    <div class="flex items-center justify-between mb-4">
+        <h2 id="ws-heading" class="text-sm font-bold uppercase tracking-[0.18em] text-slate-400 flex items-center gap-2">
+            <i class="bi bi-grid-3x3-gap-fill text-red-400"></i> Workspace Modul Kerja
+        </h2>
+        <span class="text-[11px] text-slate-500 hidden md:inline">
+            Pintasan keyboard: <kbd class="ws-index">1</kbd> – <kbd class="ws-index">4</kbd>
+        </span>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-5" id="ws-grid">
+
+        <!-- 1. Regional Overview -->
+        <article class="ws-card accent-red" id="ws-overview" data-shortcut="1">
+            <div class="relative z-10 p-6 flex flex-col gap-4 flex-1">
+                <div class="flex items-start justify-between">
+                    <div class="ws-icon"><i class="bi bi-speedometer2"></i></div>
+                    <span class="ws-index">01</span>
+                </div>
+                <div class="space-y-2">
+                    <h3 class="text-lg font-bold text-white">Regional Overview</h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">
+                        Pemantauan kesehatan transmisi jaringan real-time di unit operasi
+                        (HQ Semarang, Pengapon, Boyolali, Rewulu, Cilacap).
+                    </p>
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                    <span class="ws-chip">HQ Semarang</span>
+                    <span class="ws-chip">Pengapon</span>
+                    <span class="ws-chip">Boyolali</span>
+                    <span class="ws-chip">Rewulu</span>
+                    <span class="ws-chip">Cilacap</span>
+                </div>
+                <div class="ws-metric mt-auto pt-2 border-t border-slate-800 flex items-center justify-between">
+                    <span>UP <strong id="metric-up">–</strong> / <strong id="metric-total">–</strong></span>
+                    <span>DOWN <strong id="metric-down" class="!text-red-400">–</strong></span>
+                </div>
+                <a href="/overview" id="btn-ws-overview" class="ws-btn">
+                    <i class="bi bi-graph-up-arrow"></i> Buka Monitoring <i class="bi bi-arrow-right"></i>
+                </a>
+            </div>
+        </article>
+
+        <!-- 2. Incident Operations -->
+        <article class="ws-card accent-amber" id="ws-incidents" data-shortcut="2">
+            <div class="relative z-10 p-6 flex flex-col gap-4 flex-1">
+                <div class="flex items-start justify-between">
+                    <div class="ws-icon"><i class="bi bi-shield-exclamation"></i></div>
+                    <span class="ws-index">02</span>
+                </div>
+                <div class="space-y-2">
+                    <h3 class="text-lg font-bold text-white">Incident Operations</h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">
+                        Penanganan tiket gangguan, klaim tiket teknisi, pelacakan SLA TTA/TTR,
+                        dan ekspor riwayat log insiden (CSV).
+                    </p>
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                    <span class="ws-chip">Ticketing</span>
+                    <span class="ws-chip">SLA TTA/TTR</span>
+                    <span class="ws-chip">Export CSV</span>
+                </div>
+                <div class="ws-metric mt-auto pt-2 border-t border-slate-800 flex items-center justify-between">
+                    <span>Tiket aktif <strong id="metric-active-incidents">–</strong></span>
+                    <span>Belum diklaim <strong id="metric-unassigned" class="!text-amber-400">–</strong></span>
+                </div>
+                <a href="/incidents" id="btn-ws-incidents" class="ws-btn">
+                    <i class="bi bi-ticket-detailed"></i> Kelola Tiket <i class="bi bi-arrow-right"></i>
+                </a>
+            </div>
+        </article>
+
+        <!-- 3. NOC Diagnostic Toolkit -->
+        <article class="ws-card accent-cyan" id="ws-toolkit" data-shortcut="3">
+            <div class="relative z-10 p-6 flex flex-col gap-4 flex-1">
+                <div class="flex items-start justify-between">
+                    <div class="ws-icon"><i class="bi bi-terminal"></i></div>
+                    <span class="ws-index">03</span>
+                </div>
+                <div class="space-y-2">
+                    <h3 class="text-lg font-bold text-white">NOC Diagnostic Toolkit</h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">
+                        Peralatan diagnostik aktif langsung dari peramban
+                        (ICMP Ping probe dan TCP port inspection).
+                    </p>
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                    <span class="ws-chip">ICMP Ping</span>
+                    <span class="ws-chip">TCP Port Check</span>
+                </div>
+                <div class="ws-metric mt-auto pt-2 border-t border-slate-800 flex items-center justify-between">
+                    {% if toolkit_available %}
+                    <span><i class="bi bi-circle-fill text-emerald-400 text-[8px] me-1"></i>Modul siap</span>
+                    {% else %}
+                    <span><i class="bi bi-circle-fill text-amber-400 text-[8px] me-1"></i>Modul segera hadir</span>
+                    {% endif %}
+                    <span>probe://<strong>browser</strong></span>
+                </div>
+                {% if toolkit_available %}
+                <a href="/toolkit" id="btn-ws-toolkit" class="ws-btn">
+                    <i class="bi bi-activity"></i> Buka Toolkit <i class="bi bi-arrow-right"></i>
+                </a>
+                {% else %}
+                <a href="/toolkit" id="btn-ws-toolkit" class="ws-btn" aria-disabled="true" tabindex="-1"
+                   title="Modul NOC Diagnostic Toolkit belum diaktifkan di server"
+                   onclick="event.preventDefault();">
+                    <i class="bi bi-lock-fill"></i> Buka Toolkit
+                </a>
+                {% endif %}
+            </div>
+        </article>
+
+        <!-- 4. Device & Site Inventory -->
+        <article class="ws-card accent-emerald" id="ws-devices" data-shortcut="4">
+            <div class="relative z-10 p-6 flex flex-col gap-4 flex-1">
+                <div class="flex items-start justify-between">
+                    <div class="ws-icon"><i class="bi bi-hdd-network"></i></div>
+                    <span class="ws-index">04</span>
+                </div>
+                <div class="space-y-2">
+                    <h3 class="text-lg font-bold text-white">Device &amp; Site Inventory</h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">
+                        Manajemen inventaris perangkat unit operasi, relasi hierarki parent-child,
+                        dan upload bulk data via CSV.
+                    </p>
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                    <span class="ws-chip">Parent-Child</span>
+                    <span class="ws-chip">Bulk CSV</span>
+                    <span class="ws-chip">Maintenance</span>
+                </div>
+                <div class="ws-metric mt-auto pt-2 border-t border-slate-800 flex items-center justify-between">
+                    <span>Perangkat <strong id="metric-devices">–</strong></span>
+                    <span>Maintenance <strong id="metric-maintenance" class="!text-sky-400">–</strong></span>
+                </div>
+                <a href="/devices" id="btn-ws-devices" class="ws-btn">
+                    <i class="bi bi-box-seam"></i> Kelola Inventaris <i class="bi bi-arrow-right"></i>
+                </a>
+            </div>
+        </article>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    "use strict";
+
+    const $ = (id) => document.getElementById(id);
+    const setText = (id, value) => { const el = $(id); if (el) el.textContent = value; };
+
+    /* ---------- Connection indicator ---------- */
+    function setLinkStatus(state) {
+        const dot = $("portal-link-dot");
+        const label = $("portal-link-label");
+        if (!dot || !label) return;
+        dot.classList.remove("is-online", "is-offline", "is-pending");
+        if (state === "online") {
+            dot.classList.add("is-online");
+            label.innerHTML = 'Koneksi <strong class="text-emerald-400">AKTIF</strong>';
+        } else if (state === "offline") {
+            dot.classList.add("is-offline");
+            label.innerHTML = 'Koneksi <strong class="text-red-400">TERPUTUS</strong>';
+        } else {
+            dot.classList.add("is-pending");
+            label.textContent = "Memeriksa koneksi…";
+        }
+    }
+
+    async function fetchJson(url) {
+        const res = await fetch(url, { headers: { "Accept": "application/json" }, credentials: "same-origin" });
+        // Session kedaluwarsa -> middleware redirect ke /login (HTML)
+        if (res.redirected && res.url.includes("/login")) { window.location.href = "/login"; throw new Error("session expired"); }
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+    }
+
+    /* ---------- Live module metrics ---------- */
+    async function refreshPortal() {
+        try {
+            const [summary, active] = await Promise.all([
+                fetchJson("/api/dashboard-summary"),
+                fetchJson("/api/incidents/active").catch(() => null),
+            ]);
+
+            const m = (summary && summary.metrics) || {};
+            setText("metric-up", m.up ?? "–");
+            setText("metric-total", m.total_services ?? "–");
+            setText("metric-down", m.down ?? "–");
+            setText("metric-devices", m.total_services ?? "–");
+            setText("metric-maintenance", m.maintenance ?? "–");
+
+            if (Array.isArray(active)) {
+                setText("metric-active-incidents", active.length);
+                setText("metric-unassigned", active.filter(i => !i.assigned_to).length);
+            }
+
+            setLinkStatus("online");
+            setText("portal-last-sync", new Date().toLocaleTimeString("id-ID", {
+                timeZone: "Asia/Jakarta", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit"
+            }) + " WIB");
+        } catch (err) {
+            console.warn("[Portal] Gagal sinkronisasi:", err);
+            setLinkStatus("offline");
+        }
+    }
+
+    /* ---------- Cursor-follow glow on cards ---------- */
+    document.querySelectorAll(".ws-card").forEach((card) => {
+        card.addEventListener("pointermove", (e) => {
+            const r = card.getBoundingClientRect();
+            card.style.setProperty("--mx", (e.clientX - r.left) + "px");
+            card.style.setProperty("--my", (e.clientY - r.top) + "px");
+        });
+    });
+
+    /* ---------- Keyboard shortcuts 1-4 ---------- */
+    document.addEventListener("keydown", (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const tag = (e.target.tagName || "").toLowerCase();
+        if (["input", "textarea", "select"].includes(tag) || e.target.isContentEditable) return;
+        const card = document.querySelector('.ws-card[data-shortcut="' + e.key + '"]');
+        const btn = card && card.querySelector("a.ws-btn");
+        if (btn && btn.getAttribute("aria-disabled") !== "true") window.location.href = btn.getAttribute("href");
+    });
+
+    refreshPortal();
+    setInterval(refreshPortal, 15000);
+})();
+</script>
+{% endblock %}
