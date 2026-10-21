@@ -34,6 +34,10 @@ class ServiceResponse(ServiceBase):
     status: str = "UP"
     response_time_ms: float = 0.0
     last_check: Optional[datetime] = None
+    location_name: Optional[str] = None
+    site_type: Optional[str] = None
+    level: Optional[int] = None
+    parent_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 

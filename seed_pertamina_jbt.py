@@ -5,6 +5,7 @@ Skrip inisialisasi database Pertamina NetShield NOC enterprise multi-lokasi (Per
 Menyediakan hierarki unit operasi Pertamina JBT lengkap dengan Prometheus Server NMS & perangkat FT Pengapon.
 """
 
+import sys
 import logging
 from datetime import datetime, timedelta
 from app.database import engine, SessionLocal, Base
@@ -12,6 +13,68 @@ from app.models import Device, IncidentLog, SiteType, AreaZona, DeviceType
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("seed_pertamina_jbt")
+
+HQ_CORE_IP = "10.10.0.1"
+
+# -----------------------------------------------------------------------------
+# Fuel Terminal Tegal (Site Type: FUEL_TERMINAL) - subnet 10.60.0.0/16
+# (name, ip, area, device_type, level, parent_ip, status, rtt_ms)
+# parent_ip None pada edge router = uplink ke HQ Core Router WAN.
+# -----------------------------------------------------------------------------
+FT_TEGAL_LOCATION = "FT Tegal"
+FT_TEGAL_DEVICES = [
+    ("FT-TGL-Edge-Router",   "10.60.1.1",  AreaZona.ZONA_4, DeviceType.ROUTER, 1, None,        "NORMAL", 26.4),
+    ("FT-TGL-Switch-Tangki", "10.60.2.1",  AreaZona.ZONA_2, DeviceType.SWITCH, 2, "10.60.1.1", "NORMAL", 29.1),
+    ("FT-TGL-ATG-01",        "10.60.3.5",  AreaZona.ZONA_2, DeviceType.SWITCH, 3, "10.60.2.1", "NORMAL", 31.7),
+    ("FT-TGL-CCTV-Gateway",  "10.60.4.10", AreaZona.ZONA_1, DeviceType.CCTV,   3, "10.60.2.1", "NORMAL", 33.0),
+]
+
+
+def _add_ft_tegal_devices(db, hq_core_id):
+    """Tambahkan perangkat FT Tegal yang IP-nya belum terdaftar. Mengembalikan jumlah yang ditambahkan."""
+    ip_to_id = {ip: dev_id for ip, dev_id in db.query(Device.ip_address, Device.id).all()}
+    added = 0
+    for name, ip, area, dtype, level, parent_ip, status, rtt in FT_TEGAL_DEVICES:
+        if ip in ip_to_id:
+            continue
+        dev = Device(
+            name=name,
+            ip_address=ip,
+            location_name=FT_TEGAL_LOCATION,
+            site_type=SiteType.FUEL_TERMINAL.value,
+            level=level,
+            parent_id=ip_to_id.get(parent_ip) if parent_ip else hq_core_id,
+            area=area,
+            device_type=dtype,
+            status=status,
+            response_time_ms=rtt,
+        )
+        db.add(dev)
+        db.flush()  # beri ID agar bisa jadi parent perangkat berikutnya
+        ip_to_id[ip] = dev.id
+        added += 1
+    return added
+
+
+def ensure_jbt_demo_units():
+    """
+    Idempotent (tanpa drop table): pastikan contoh perangkat FT Tegal tersedia pada database
+    yang sudah berisi data, agar tab/kartu FT Tegal di Inventory langsung bisa didemokan.
+    """
+    db = SessionLocal()
+    try:
+        hq_core = db.query(Device.id).filter(Device.ip_address == HQ_CORE_IP).first()
+        added = _add_ft_tegal_devices(db, hq_core[0] if hq_core else None)
+        db.commit()
+        if added:
+            logger.info("Added %d demo device(s) for %s.", added, FT_TEGAL_LOCATION)
+        return added
+    except Exception as e:
+        db.rollback()
+        logger.error("Failed to ensure JBT demo units: %s", e)
+        return 0
+    finally:
+        db.close()
 
 
 def seed_database():
@@ -261,6 +324,12 @@ def seed_database():
         )
         db.add(it_clp_router)
 
+        # ---------------------------------------------------------------------
+        # 6. Fuel Terminal Tegal (Site Type: FUEL_TERMINAL)
+        # ---------------------------------------------------------------------
+        db.flush()
+        _add_ft_tegal_devices(db, hq_core.id)
+
         db.commit()
 
         # ---------------------------------------------------------------------
@@ -301,4 +370,9 @@ def seed_database():
 
 
 if __name__ == "__main__":
-    seed_database()
+    # python seed_pertamina_jbt.py           -> DROP & seed ulang seluruh database
+    # python seed_pertamina_jbt.py --ensure  -> hanya tambahkan perangkat demo yang belum ada (aman)
+    if "--ensure" in sys.argv:
+        ensure_jbt_demo_units()
+    else:
+        seed_database()

@@ -8,16 +8,21 @@ import zipfile
 import xml.etree.ElementTree as ET
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from urllib.parse import urlsplit, parse_qs, urlencode
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Form, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func, false
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, Query as SAQuery
 
 from app.database import get_db
 from app.models.monitoring import MonitoredService, Device, AuditLog, AreaZona, DeviceType, SiteType
 from app.schemas.monitoring import ServiceCreate, ServiceUpdate, ServiceResponse
+from app.core.locations import (
+    ALL_LOCATIONS, JBT_UNITS, build_location_summary, is_all, resolve_location_filter, unit_key_for,
+)
 
 router = APIRouter(prefix="/api/devices", tags=["Devices"])
 
@@ -105,6 +110,48 @@ def parse_device_type_value(val: Optional[str], name_fallback: str = "") -> Devi
         if item.value == val_str or item.name == val_str:
             return item
     return infer_device_type(str(val), name_fallback)
+
+
+# =============================================================================
+# SEGMENTASI LOKASI / UNIT OPERASI REGION JBT
+# =============================================================================
+
+LOCATION_QUERY = Query(
+    None,
+    description="Filter unit operasi JBT, mis. 'FT Tegal' atau 'IT Semarang'. Kosong / 'ALL' = seluruh region.",
+)
+
+
+def get_distinct_locations(db: Session) -> List[str]:
+    """Daftar unik seluruh location_name yang tersimpan di database."""
+    return sorted({row[0] for row in db.query(Device.location_name).distinct().all() if row[0]})
+
+
+def get_location_summary(db: Session) -> List[Dict[str, Any]]:
+    """Ringkasan total / UP / WARNING / DOWN / maintenance per unit operasi (1 query GROUP BY)."""
+    rows = (
+        db.query(Device.location_name, Device.site_type, Device.status, Device.is_maintenance, func.count(Device.id))
+        .group_by(Device.location_name, Device.site_type, Device.status, Device.is_maintenance)
+        .all()
+    )
+    return build_location_summary(rows)
+
+
+def apply_location_filter(query: SAQuery, criteria: Optional[Dict[str, Any]]) -> SAQuery:
+    """
+    Terapkan filter lokasi ke query Device.
+    - criteria None (ALL / kosong)  -> tanpa filter.
+    - unit dikenali                 -> Device.location_name IN (variasi nama lokasi unit tsb).
+    - teks bebas tak dikenali       -> Device.location_name ILIKE '%teks%'.
+    """
+    if criteria is None:
+        return query
+    names = criteria.get("names")
+    if names is None:
+        return query.filter(Device.location_name.ilike(f"%{criteria['key']}%"))
+    if not names:
+        return query.filter(false())  # unit terdaftar tetapi belum punya perangkat
+    return query.filter(Device.location_name.in_(names))
 
 
 @router.post("/upload-assets", status_code=status.HTTP_201_CREATED)
@@ -363,9 +410,25 @@ async def upload_assets(request: Request, file: UploadFile = File(...), db: Sess
 
 
 @router.get("", response_model=List[ServiceResponse])
-def get_devices(db: Session = Depends(get_db)):
-    """List all monitored devices."""
-    return db.query(MonitoredService).all()
+def get_devices(location: Optional[str] = LOCATION_QUERY, db: Session = Depends(get_db)):
+    """List monitored devices, opsional difilter per unit operasi (?location=FT+Tegal)."""
+    query = db.query(MonitoredService)
+    if not is_all(location):
+        criteria = resolve_location_filter(location, get_distinct_locations(db))
+        query = apply_location_filter(query, criteria)
+    return query.order_by(MonitoredService.id.asc()).all()
+
+
+@router.get("/locations")
+def get_devices_locations(db: Session = Depends(get_db)):
+    """Ringkasan status perangkat per unit operasi Region JBT (untuk tab / kartu filter)."""
+    units = get_location_summary(db)
+    region = {k: sum(u[k] for u in units) for k in ("total", "up", "warning", "down", "maintenance")}
+    return {
+        "region": region,
+        "distinct_locations": get_distinct_locations(db),
+        "units": units,
+    }
 
 
 @router.post("", response_model=ServiceResponse, status_code=status.HTTP_201_CREATED)
@@ -598,8 +661,16 @@ def _audit(db: Session, request: Request, action: str) -> None:
     ))
 
 
-def _back_to_inventory() -> RedirectResponse:
-    return RedirectResponse(url="/devices", status_code=status.HTTP_303_SEE_OTHER)
+def _back_to_inventory(request: Optional[Request] = None) -> RedirectResponse:
+    """Kembali ke /devices, mempertahankan filter ?location= aktif (dibaca dari header Referer)."""
+    url = "/devices"
+    if request is not None:
+        referer = urlsplit(request.headers.get("referer") or "")
+        if referer.path.rstrip("/") == "/devices":
+            location = (parse_qs(referer.query).get("location") or [""])[0].strip()
+            if not is_all(location):
+                url += "?" + urlencode({"location": location})
+    return RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
 
 
 def _build_device_fields(
@@ -664,9 +735,28 @@ def _build_device_fields(
 
 @web_router.get("", response_class=HTMLResponse)
 @web_router.get("/", response_class=HTMLResponse)
-def devices_inventory_view(request: Request, db: Session = Depends(get_db)):
-    """GET /devices: halaman Inventory perangkat (tabel + modal Tambah / Edit / Upload CSV)."""
-    devices = db.query(Device).order_by(Device.id.asc()).all()
+def devices_inventory_view(request: Request, location: Optional[str] = LOCATION_QUERY, db: Session = Depends(get_db)):
+    """
+    GET /devices: halaman Inventory perangkat (tabel + modal Tambah / Edit / Upload CSV).
+    GET /devices?location=FT+Tegal: hanya perangkat di unit operasi tersebut.
+    """
+    distinct_locations = get_distinct_locations(db)
+    criteria = resolve_location_filter(location, distinct_locations)
+
+    devices = apply_location_filter(db.query(Device), criteria).order_by(Device.id.asc()).all()
+    # Dropdown parent & nama parent tetap memakai seluruh perangkat (parent bisa beda unit, mis. HQ Core).
+    all_devices = devices if criteria is None else db.query(Device).order_by(Device.id.asc()).all()
+
+    location_summary = get_location_summary(db)
+    region_summary = {k: sum(u[k] for u in location_summary) for k in ("total", "up", "warning", "down", "maintenance")}
+
+    # Saran isian "Lokasi Operasional": nama yang sudah dipakai + unit registry yang belum punya perangkat.
+    used_units = {unit_key_for(n) for n in distinct_locations}
+    location_options = distinct_locations + [u.key for u in JBT_UNITS if u.key not in used_units]
+    prefill_location = ""
+    if criteria is not None:
+        prefill_location = (criteria.get("names") or [criteria["key"]])[0]
+
     flash = request.session.pop("flash", None)
 
     return templates.TemplateResponse(
@@ -675,7 +765,15 @@ def devices_inventory_view(request: Request, db: Session = Depends(get_db)):
         context={
             "request": request,
             "devices": devices,
-            "name_by_id": {d.id: d.name for d in devices},
+            "all_devices": all_devices,
+            "name_by_id": {d.id: d.name for d in all_devices},
+            "location_summary": location_summary,
+            "region_summary": region_summary,
+            "active_location": criteria["key"] if criteria else ALL_LOCATIONS,
+            "active_location_label": criteria["label"] if criteria else "Seluruh Region JBT",
+            "is_filtered": criteria is not None,
+            "location_options": location_options,
+            "prefill_location": prefill_location,
             "areas": [{"key": a.name, "label": a.value} for a in AreaZona],
             "site_types": SITE_TYPE_VALUES,
             "device_types": [d.value for d in DeviceType],
@@ -718,10 +816,10 @@ def add_device_form(
     except SQLAlchemyError as exc:
         db.rollback()
         _flash(request, "danger", f"Gagal menyimpan perangkat ke database: {exc.__class__.__name__}")
-        return _back_to_inventory()
+        return _back_to_inventory(request)
 
     _flash(request, "success", f"Perangkat '{fields['name']}' ({fields['ip_address']}) berhasil ditambahkan.")
-    return _back_to_inventory()
+    return _back_to_inventory(request)
 
 
 @web_router.post("/upload-csv")
@@ -737,15 +835,15 @@ async def upload_devices_csv(request: Request, file: UploadFile = File(...), db:
     filename = file.filename or ""
     if not filename.lower().endswith(".csv"):
         _flash(request, "danger", "File harus berekstensi .csv")
-        return _back_to_inventory()
+        return _back_to_inventory(request)
 
     raw = await file.read()
     if not raw:
         _flash(request, "danger", "File CSV kosong.")
-        return _back_to_inventory()
+        return _back_to_inventory(request)
     if len(raw) > MAX_CSV_BYTES:
         _flash(request, "danger", f"Ukuran file melebihi batas {MAX_CSV_BYTES // (1024 * 1024)} MB.")
-        return _back_to_inventory()
+        return _back_to_inventory(request)
 
     try:
         text = raw.decode("utf-8-sig")  # utf-8-sig membuang BOM bawaan Excel
@@ -765,7 +863,7 @@ async def upload_devices_csv(request: Request, file: UploadFile = File(...), db:
             f"Header CSV tidak lengkap, kolom wajib hilang: {', '.join(missing)}.",
             [f"Header yang diharapkan: {','.join(CSV_TEMPLATE_HEADERS)}"],
         )
-        return _back_to_inventory()
+        return _back_to_inventory(request)
 
     def clean(value: Any) -> str:
         return value.strip() if isinstance(value, str) else ""
@@ -848,7 +946,7 @@ async def upload_devices_csv(request: Request, file: UploadFile = File(...), db:
     except SQLAlchemyError as exc:
         db.rollback()
         _flash(request, "danger", f"Import CSV dibatalkan karena kesalahan database: {exc.__class__.__name__}")
-        return _back_to_inventory()
+        return _back_to_inventory(request)
 
     summary = (
         f"Import CSV selesai: {len(created)} perangkat ditambahkan, "
@@ -856,7 +954,7 @@ async def upload_devices_csv(request: Request, file: UploadFile = File(...), db:
     )
     level = "success" if created and not errors else ("warning" if created or skipped_existing else "danger")
     _flash(request, level, summary, errors + warnings)
-    return _back_to_inventory()
+    return _back_to_inventory(request)
 
 
 @web_router.get("/csv-template")
@@ -893,7 +991,7 @@ def edit_device_form(
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         _flash(request, "danger", f"Perangkat dengan ID #{device_id} tidak ditemukan.")
-        return _back_to_inventory()
+        return _back_to_inventory(request)
 
     try:
         fields = _build_device_fields(
@@ -908,14 +1006,14 @@ def edit_device_form(
     except ValueError as exc:
         db.rollback()
         _flash(request, "danger", str(exc))
-        return _back_to_inventory()
+        return _back_to_inventory(request)
     except SQLAlchemyError as exc:
         db.rollback()
         _flash(request, "danger", f"Gagal menyimpan perubahan ke database: {exc.__class__.__name__}")
-        return _back_to_inventory()
+        return _back_to_inventory(request)
 
     _flash(request, "success", f"Perangkat '{fields['name']}' berhasil diperbarui.")
-    return _back_to_inventory()
+    return _back_to_inventory(request)
 
 
 @web_router.post("/{device_id}/delete")
@@ -929,7 +1027,7 @@ def delete_device_form(device_id: int, request: Request, db: Session = Depends(g
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         _flash(request, "danger", f"Perangkat dengan ID #{device_id} tidak ditemukan.")
-        return _back_to_inventory()
+        return _back_to_inventory(request)
 
     name, ip, grandparent_id = device.name, device.ip_address, device.parent_id
     try:
@@ -945,11 +1043,11 @@ def delete_device_form(device_id: int, request: Request, db: Session = Depends(g
     except SQLAlchemyError as exc:
         db.rollback()
         _flash(request, "danger", f"Gagal menghapus perangkat: {exc.__class__.__name__}")
-        return _back_to_inventory()
+        return _back_to_inventory(request)
 
     suffix = f" {reparented} perangkat turunan dipindahkan ke parent di atasnya." if reparented else ""
     _flash(request, "success", f"Perangkat '{name}' ({ip}) berhasil dihapus.{suffix}")
-    return _back_to_inventory()
+    return _back_to_inventory(request)
 
 
 audit_router = APIRouter(prefix="/api/audit-logs", tags=["Audit Logs"])

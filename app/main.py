@@ -13,7 +13,7 @@ from app.routers.devices import audit_router
 
 from app.services.checker import start_polling
 from app.services.prom_poller import monitor_prometheus_targets
-from seed_pertamina_jbt import seed_database
+from seed_pertamina_jbt import seed_database, ensure_jbt_demo_units
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("netshield_main")
@@ -88,6 +88,7 @@ async def on_startup():
             seed_database()
         else:
             logger.info("Database already initialized with %d devices.", count)
+            ensure_jbt_demo_units()  # idempotent: tambah perangkat demo FT Tegal bila belum ada
     except Exception as e:
         logger.info("Database seeding status check: %s", e)
 
