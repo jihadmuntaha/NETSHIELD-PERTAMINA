@@ -75,6 +75,14 @@
                     <i class="bi bi-hdd-network-fill w-5 text-center {% if active_page == 'devices' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
                     <span>Inventory</span>
                 </a>
+
+                <div class="pt-3 pb-1 px-4 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Diagnostik</div>
+
+                <!-- 4. NOC Toolkit -->
+                <a href="/toolkit" id="nav-toolkit" class="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all {% if active_page == 'toolkit' %}bg-red-600/10 text-red-400 border border-red-500/20 shadow-sm shadow-red-900/20{% else %}text-slate-300 hover:bg-slate-800 hover:text-white border border-transparent{% endif %}">
+                    <i class="bi bi-terminal-fill w-5 text-center {% if active_page == 'toolkit' %}text-red-400{% else %}text-slate-400{% endif %}"></i>
+                    <span>NOC Toolkit</span>
+                </a>
             </nav>
         </div>
 
@@ -110,6 +118,10 @@
                     <span class="text-slate-600">|</span>
                     <a href="/devices" class="hover:text-red-400 transition {% if active_page == 'devices' %}text-red-400 font-bold{% else %}text-slate-300{% endif %}">
                         <i class="bi bi-hdd-network me-1"></i>Inventory
+                    </a>
+                    <span class="text-slate-600">|</span>
+                    <a href="/toolkit" id="topnav-toolkit" class="hover:text-red-400 transition {% if active_page == 'toolkit' %}text-red-400 font-bold{% else %}text-slate-300{% endif %}">
+                        <i class="bi bi-terminal me-1"></i>NOC Toolkit
                     </a>
                 </div>
             </div>

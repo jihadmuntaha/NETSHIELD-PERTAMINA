@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import engine, Base, run_migrations
-from app.routers import dashboard, devices, incidents, webhook, auth
+from app.routers import dashboard, devices, incidents, webhook, auth, toolkit
 from app.routers.devices import audit_router
 
 from app.services.checker import start_polling
@@ -69,6 +69,7 @@ app.include_router(incidents.api_router)
 app.include_router(incidents.v1_router)
 app.include_router(webhook.router)
 app.include_router(audit_router)
+app.include_router(toolkit.router)
 
 
 @app.on_event("startup")

@@ -1,0 +1,637 @@
+{% extends "base.html" %}
+
+{% block title %}NOC Diagnostic Toolkit &middot; Live ICMP Ping{% endblock %}
+
+{% block head %}
+<meta name="description" content="NOC Diagnostic Toolkit Pertamina NetShield: uji konektivitas ICMP Echo Request/Reply langsung dari browser ke perangkat lokal maupun publik.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+    :root {
+        --tk-bg: #0f172a;
+        --tk-border: #1e293b;
+        --tk-border-hi: #334155;
+        --tk-muted: #94a3b8;
+        --tk-term: #03060c;
+        --tk-green: #4ade80;
+        --tk-green-hi: #86efac;
+        --tk-yellow: #facc15;
+        --tk-red: #f87171;
+        --tk-cyan: #67e8f9;
+        --tk-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    /* ---------- Hero ---------- */
+    .tk-hero {
+        position: relative; overflow: hidden; border-radius: 1rem; padding: 1.4rem 1.6rem;
+        background:
+            radial-gradient(600px 180px at 0% 0%, rgba(34, 211, 238, .14), transparent 70%),
+            radial-gradient(500px 200px at 100% 100%, rgba(220, 38, 38, .14), transparent 70%),
+            linear-gradient(135deg, #0f172a 0%, #0b1220 100%);
+        border: 1px solid var(--tk-border);
+    }
+    .tk-hero::after {
+        content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .35;
+        background-image: linear-gradient(rgba(148,163,184,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.06) 1px, transparent 1px);
+        background-size: 28px 28px;
+        mask-image: linear-gradient(90deg, transparent, #000 40%, #000 60%, transparent);
+    }
+    .tk-hero-icon {
+        width: 3rem; height: 3rem; border-radius: .85rem; display: grid; place-items: center; font-size: 1.35rem; color: #67e8f9;
+        background: linear-gradient(145deg, rgba(34,211,238,.18), rgba(14,116,144,.08)); border: 1px solid rgba(34,211,238,.35);
+        box-shadow: 0 0 24px rgba(34,211,238,.18);
+    }
+    .tk-chip {
+        display: inline-flex; align-items: center; gap: .35rem; padding: .22rem .6rem; border-radius: 999px; font-size: .68rem; font-weight: 700;
+        letter-spacing: .04em; color: #cbd5e1; background: rgba(30,41,59,.7); border: 1px solid var(--tk-border-hi);
+    }
+    .tk-chip.cyan { color: #67e8f9; border-color: rgba(34,211,238,.35); background: rgba(8,145,178,.12); }
+
+    /* ---------- Panels ---------- */
+    .tk-card { background: var(--tk-bg); border: 1px solid var(--tk-border); border-radius: 1rem; }
+    .tk-card-head { padding: .9rem 1.1rem; border-bottom: 1px solid var(--tk-border); display: flex; align-items: center; gap: .6rem; }
+    .tk-card-title { font-size: .74rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #cbd5e1; margin: 0; }
+    .tk-label { display: block; font-size: .68rem; font-weight: 700; color: var(--tk-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .35rem; }
+    .tk-input {
+        width: 100%; background: #020617; border: 1px solid var(--tk-border-hi); color: #f1f5f9; border-radius: .6rem;
+        padding: .55rem .75rem; font-size: .85rem; transition: border-color .15s, box-shadow .15s;
+    }
+    .tk-input:focus { outline: none; border-color: #22d3ee; box-shadow: 0 0 0 .2rem rgba(34,211,238,.18); }
+    .tk-input::placeholder { color: #475569; }
+    .tk-input.mono { font-family: var(--tk-mono); letter-spacing: .02em; color: var(--tk-green-hi); }
+    .tk-input.is-invalid { border-color: #ef4444; box-shadow: 0 0 0 .2rem rgba(239,68,68,.18); }
+    .tk-input.flash { animation: tkFlash .6s ease; }
+    @keyframes tkFlash { 0% { box-shadow: 0 0 0 .25rem rgba(74,222,128,.45); } 100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); } }
+    select.tk-input { appearance: auto; }
+    select.tk-input optgroup { color: #94a3b8; background: #0f172a; font-style: normal; }
+    select.tk-input option { color: #e2e8f0; background: #020617; }
+
+    .tk-device-info { font-size: .72rem; color: var(--tk-muted); background: rgba(2,6,23,.6); border: 1px dashed var(--tk-border-hi); border-radius: .6rem; padding: .5rem .65rem; }
+    .tk-device-info strong { color: #e2e8f0; }
+
+    /* Segmented packet selector */
+    .tk-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; }
+    .tk-seg input { position: absolute; opacity: 0; pointer-events: none; }
+    .tk-seg label {
+        cursor: pointer; text-align: center; padding: .5rem .25rem; border-radius: .6rem; border: 1px solid var(--tk-border-hi);
+        background: #020617; color: #cbd5e1; font-weight: 700; font-size: .8rem; transition: all .15s ease; user-select: none;
+    }
+    .tk-seg label small { display: block; font-weight: 500; font-size: .62rem; color: #64748b; letter-spacing: .04em; }
+    .tk-seg label:hover { border-color: #475569; color: #fff; }
+    .tk-seg input:checked + label { border-color: rgba(34,211,238,.6); background: rgba(8,145,178,.15); color: #67e8f9; box-shadow: inset 0 0 0 1px rgba(34,211,238,.25); }
+    .tk-seg input:checked + label small { color: #22d3ee; }
+    .tk-seg input:focus-visible + label { outline: 2px solid #22d3ee; outline-offset: 2px; }
+
+    .tk-quick { display: inline-flex; align-items: center; gap: .3rem; font-family: var(--tk-mono); font-size: .7rem; padding: .22rem .55rem; border-radius: .45rem; border: 1px solid var(--tk-border-hi); background: #0b1220; color: #94a3b8; transition: all .15s; }
+    .tk-quick:hover { color: #67e8f9; border-color: rgba(34,211,238,.45); transform: translateY(-1px); }
+
+    .tk-run {
+        width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: .55rem; padding: .75rem 1rem; border-radius: .7rem; border: 0;
+        font-weight: 800; letter-spacing: .03em; color: #fff; font-size: .9rem;
+        background: linear-gradient(135deg, #dc2626 0%, #b91c1c 55%, #7f1d1d 100%);
+        box-shadow: 0 10px 24px rgba(220,38,38,.28), inset 0 1px 0 rgba(255,255,255,.12); transition: transform .15s, box-shadow .15s, filter .15s;
+    }
+    .tk-run:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 30px rgba(220,38,38,.38); filter: brightness(1.08); }
+    .tk-run:disabled { cursor: progress; filter: grayscale(.35) brightness(.85); }
+    .tk-kbd { font-family: var(--tk-mono); font-size: .62rem; padding: .05rem .35rem; border-radius: .3rem; border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.2); }
+
+    /* History */
+    .tk-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
+    .tk-history button {
+        width: 100%; display: flex; align-items: center; gap: .55rem; text-align: left; padding: .45rem .6rem; border-radius: .55rem;
+        background: #020617; border: 1px solid var(--tk-border); color: #cbd5e1; font-size: .74rem; transition: border-color .15s, background-color .15s;
+    }
+    .tk-history button:hover { border-color: var(--tk-border-hi); background: #0b1220; }
+    .tk-history .dot { width: .5rem; height: .5rem; border-radius: 50%; flex-shrink: 0; }
+    .tk-history .dot.up { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,.7); }
+    .tk-history .dot.down { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,.7); }
+    .tk-history .host { font-family: var(--tk-mono); color: #e2e8f0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tk-history .meta { color: #64748b; font-size: .66rem; white-space: nowrap; }
+
+    /* ---------- Terminal ---------- */
+    .tk-term {
+        display: flex; flex-direction: column; min-height: 520px; border-radius: 1rem; overflow: hidden;
+        background: var(--tk-term); border: 1px solid #1f2937;
+        box-shadow: 0 30px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(74,222,128,.04), inset 0 0 120px rgba(74,222,128,.025);
+    }
+    .tk-term-bar { display: flex; align-items: center; gap: .75rem; padding: .6rem .9rem; background: linear-gradient(180deg, #111827, #0b0f19); border-bottom: 1px solid #1f2937; }
+    .tk-lights { display: flex; gap: .4rem; }
+    .tk-lights i { width: .7rem; height: .7rem; border-radius: 50%; display: block; }
+    .tk-lights i:nth-child(1) { background: #ef4444; } .tk-lights i:nth-child(2) { background: #eab308; } .tk-lights i:nth-child(3) { background: #22c55e; }
+    .tk-term-title { font-family: var(--tk-mono); font-size: .74rem; color: #9ca3af; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tk-term-btn { font-size: .78rem; width: 1.9rem; height: 1.9rem; display: inline-grid; place-items: center; border-radius: .45rem; border: 1px solid #1f2937; background: #0b0f19; color: #9ca3af; transition: all .15s; }
+    .tk-term-btn:hover { color: #fff; border-color: #374151; }
+
+    .tk-badge {
+        display: inline-flex; align-items: center; gap: .4rem; padding: .25rem .65rem; border-radius: 999px; font-family: var(--tk-mono);
+        font-size: .68rem; font-weight: 700; letter-spacing: .08em; border: 1px solid; white-space: nowrap; transition: all .25s ease;
+    }
+    .tk-badge .pulse { width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; }
+    .tk-badge.idle { color: #9ca3af; border-color: #374151; background: rgba(55,65,81,.25); }
+    .tk-badge.probing { color: var(--tk-yellow); border-color: rgba(250,204,21,.45); background: rgba(250,204,21,.1); }
+    .tk-badge.probing .pulse { animation: tkPulse 1s ease-in-out infinite; }
+    .tk-badge.online { color: var(--tk-green); border-color: rgba(74,222,128,.5); background: rgba(34,197,94,.12); box-shadow: 0 0 16px rgba(74,222,128,.18); }
+    .tk-badge.offline { color: var(--tk-red); border-color: rgba(248,113,113,.5); background: rgba(239,68,68,.12); box-shadow: 0 0 16px rgba(248,113,113,.18); }
+    @keyframes tkPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .3; transform: scale(.7); } }
+
+    .tk-screen {
+        position: relative; flex: 1; margin: 0; padding: 1rem 1.15rem 1.25rem; overflow: auto; max-height: 560px;
+        font-family: var(--tk-mono); font-size: .8rem; line-height: 1.6; color: var(--tk-green-hi); background: transparent;
+        white-space: pre-wrap; word-break: break-word; tab-size: 4;
+        text-shadow: 0 0 6px rgba(74,222,128,.18);
+    }
+    .tk-screen::-webkit-scrollbar { width: 8px; }
+    .tk-screen::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 8px; }
+    .tk-line { display: block; animation: tkLine .18s ease-out both; }
+    @keyframes tkLine { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
+    .tk-line.dim { color: #6b7280; text-shadow: none; }
+    .tk-line.prompt { color: var(--tk-yellow); text-shadow: 0 0 6px rgba(250,204,21,.2); }
+    .tk-line.prompt .user { color: var(--tk-green); }
+    .tk-line.prompt .path { color: #60a5fa; }
+    .tk-line.prompt .cmd { color: #f9fafb; }
+    .tk-line.head { color: var(--tk-yellow); }
+    .tk-line.ok { color: var(--tk-green); }
+    .tk-line.err { color: var(--tk-red); text-shadow: 0 0 6px rgba(248,113,113,.2); }
+    .tk-line.stat { color: var(--tk-cyan); text-shadow: 0 0 6px rgba(103,232,249,.15); }
+    .tk-line.verdict-up { color: #0b0f19; background: var(--tk-green); display: inline-block; padding: 0 .4rem; border-radius: .2rem; text-shadow: none; font-weight: 700; }
+    .tk-line.verdict-down { color: #0b0f19; background: var(--tk-red); display: inline-block; padding: 0 .4rem; border-radius: .2rem; text-shadow: none; font-weight: 700; }
+    .tk-cursor { display: inline-block; width: .55rem; height: 1rem; vertical-align: -2px; background: var(--tk-green); animation: tkBlink 1s steps(1) infinite; box-shadow: 0 0 8px rgba(74,222,128,.6); }
+    @keyframes tkBlink { 50% { opacity: 0; } }
+
+    /* Metrics */
+    .tk-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #1f2937; border-top: 1px solid #1f2937; }
+    .tk-metric { background: #070b14; padding: .7rem .9rem; min-width: 0; }
+    .tk-metric .k { font-size: .6rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #6b7280; }
+    .tk-metric .v { font-family: var(--tk-mono); font-size: .92rem; font-weight: 700; color: #e5e7eb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tk-metric .v.good { color: var(--tk-green); } .tk-metric .v.warn { color: var(--tk-yellow); } .tk-metric .v.bad { color: var(--tk-red); }
+    @media (max-width: 575.98px) { .tk-metrics { grid-template-columns: repeat(2, 1fr); } }
+
+    @media (prefers-reduced-motion: reduce) {
+        .tk-line, .tk-badge .pulse, .tk-cursor, .tk-input.flash { animation: none !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- HERO -->
+<section class="tk-hero" aria-labelledby="toolkit-title">
+    <div class="relative z-10 d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+        <div class="d-flex align-items-center gap-3">
+            <div class="tk-hero-icon"><i class="bi bi-terminal-fill"></i></div>
+            <div>
+                <div class="text-[11px] font-bold uppercase tracking-[0.2em] text-cyan-400 mb-1">NOC Diagnostic Toolkit</div>
+                <h1 id="toolkit-title" class="text-xl md:text-2xl font-extrabold text-white leading-tight m-0">Live ICMP Ping Probe</h1>
+                <p class="text-sm text-slate-400 m-0 mt-1">Uji ICMP Echo Request/Reply dari server NOC ke perangkat lokal maupun host publik.</p>
+            </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <span class="tk-chip cyan"><i class="bi bi-broadcast-pin"></i>ICMP Echo</span>
+            <span class="tk-chip" title="Sistem operasi server yang mengirim paket"><i class="bi bi-cpu"></i>Origin: {{ server_os }}</span>
+            <span class="tk-chip"><i class="bi bi-hdd-network"></i>{{ devices|length }} perangkat terdaftar</span>
+        </div>
+    </div>
+</section>
+
+<div class="row g-4">
+    <!-- ============ PANEL KONTROL ============ -->
+    <div class="col-12 col-xl-4">
+        <form id="ping-form" class="tk-card h-100 d-flex flex-column" novalidate autocomplete="off">
+            <div class="tk-card-head">
+                <i class="bi bi-sliders2 text-cyan-400"></i>
+                <h2 class="tk-card-title">Parameter Probe</h2>
+            </div>
+
+            <div class="p-3 p-md-4 d-flex flex-column gap-3 flex-grow-1">
+                <!-- Pilih perangkat -->
+                <div>
+                    <label for="device-select" class="tk-label">Perangkat Terdaftar</label>
+                    <select id="device-select" class="tk-input">
+                        <option value="">&mdash; Pilih perangkat (opsional) &mdash;</option>
+                        {% for loc, items in devices|groupby('location_name') %}
+                        <optgroup label="{{ loc or 'Tanpa Lokasi' }}">
+                            {% for d in items %}
+                            <option value="{{ d.ip_address }}"
+                                    data-name="{{ d.name }}"
+                                    data-loc="{{ d.location_name or '-' }}"
+                                    data-type="{{ d.device_type.value if d.device_type else '-' }}"
+                                    data-status="{{ 'MAINTENANCE' if d.is_maintenance else d.status }}">{{ d.name }} &mdash; {{ d.ip_address }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        {% endfor %}
+                    </select>
+                    <div id="device-info" class="tk-device-info mt-2 d-none" aria-live="polite"></div>
+                </div>
+
+                <!-- Target manual -->
+                <div>
+                    <label for="target-ip" class="tk-label">Target IP / Hostname</label>
+                    <div class="position-relative">
+                        <i class="bi bi-hash position-absolute top-50 translate-middle-y text-slate-500" style="left:.7rem;"></i>
+                        <input type="text" id="target-ip" name="target_ip" class="tk-input mono" style="padding-left:2rem;"
+                               value="{{ prefill_target }}" placeholder="10.4.12.1 atau pertamina.com"
+                               maxlength="255" spellcheck="false" autocapitalize="off" required
+                               aria-describedby="target-help">
+                    </div>
+                    <div id="target-help" class="d-flex flex-wrap align-items-center gap-1 mt-2">
+                        <span class="text-[11px] text-slate-500 me-1">Cepat:</span>
+                        <button type="button" class="tk-quick" data-target="127.0.0.1" id="quick-localhost"><i class="bi bi-house-door"></i>127.0.0.1</button>
+                        <button type="button" class="tk-quick" data-target="8.8.8.8" id="quick-google"><i class="bi bi-globe2"></i>8.8.8.8</button>
+                        <button type="button" class="tk-quick" data-target="1.1.1.1" id="quick-cloudflare"><i class="bi bi-cloud"></i>1.1.1.1</button>
+                    </div>
+                    <div id="target-error" class="text-[12px] text-red-400 mt-1 d-none" role="alert"></div>
+                </div>
+
+                <!-- Jumlah paket -->
+                <fieldset>
+                    <legend class="tk-label">Jumlah Paket ICMP</legend>
+                    <div class="tk-seg" role="radiogroup">
+                        {% for n in packet_options %}
+                        <input type="radio" name="count" id="count-{{ n }}" value="{{ n }}" {% if n == 4 %}checked{% endif %}>
+                        <label for="count-{{ n }}">{{ n }}<small>paket{% if n == 1 %} &middot; cepat{% elif n == 4 %} &middot; standar{% else %} &middot; stabilitas{% endif %}</small></label>
+                        {% endfor %}
+                    </div>
+                </fieldset>
+
+                <button type="submit" id="btn-run-ping" class="tk-run mt-1">
+                    <span id="btn-run-icon"><i class="bi bi-lightning-charge-fill"></i></span>
+                    <span id="btn-run-label">Jalankan ICMP Ping</span>
+                    <span class="tk-kbd d-none d-md-inline">Enter</span>
+                </button>
+
+                <!-- Riwayat -->
+                <div class="mt-2">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span class="tk-label mb-0">Riwayat Probe Sesi Ini</span>
+                        <button type="button" id="btn-clear-history" class="text-[11px] text-slate-500 hover:text-red-400 transition">Hapus</button>
+                    </div>
+                    <ul id="probe-history" class="tk-history" aria-live="polite">
+                        <li class="text-[12px] text-slate-500" id="history-empty">Belum ada probe dijalankan.</li>
+                    </ul>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- ============ TERMINAL ============ -->
+    <div class="col-12 col-xl-8">
+        <section class="tk-term" id="terminal" data-user="{{ user }}" aria-label="Konsol output ping">
+            <div class="tk-term-bar">
+                <div class="tk-lights" aria-hidden="true"><i></i><i></i><i></i></div>
+                <div class="tk-term-title"><i class="bi bi-terminal me-1"></i>{{ user }}@netshield-noc: ~/toolkit/icmp</div>
+                <span id="term-badge" class="tk-badge idle" role="status" aria-live="polite"><span class="pulse"></span><span id="term-badge-text">IDLE</span></span>
+                <button type="button" id="btn-copy-output" class="tk-term-btn" title="Salin output"><i class="bi bi-clipboard"></i></button>
+                <button type="button" id="btn-clear-term" class="tk-term-btn" title="Bersihkan layar"><i class="bi bi-eraser"></i></button>
+            </div>
+
+<pre id="term-output" class="tk-screen" tabindex="0"><span class="tk-line dim">NetShield NOC Diagnostic Toolkit v2.0 &mdash; ICMP Echo Probe</span><span class="tk-line dim">Origin  : {{ server_os }}</span><span class="tk-line dim">Operator: {{ user }}</span><span class="tk-line dim">Pilih perangkat atau ketik target, lalu tekan "Jalankan ICMP Ping".</span><span class="tk-line dim"> </span><span class="tk-line prompt" id="idle-prompt"><span class="user">{{ user }}@netshield</span>:<span class="path">~/toolkit/icmp</span>$ <span class="tk-cursor"></span></span></pre>
+
+            <div class="tk-metrics">
+                <div class="tk-metric"><div class="k">Target</div><div class="v" id="m-target">&mdash;</div></div>
+                <div class="tk-metric"><div class="k">Avg RTT</div><div class="v" id="m-rtt">&mdash;</div></div>
+                <div class="tk-metric"><div class="k">Paket</div><div class="v" id="m-count">&mdash;</div></div>
+                <div class="tk-metric"><div class="k">Durasi Eksekusi</div><div class="v" id="m-duration">&mdash;</div></div>
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+    'use strict';
+
+    const API_URL = '/toolkit/api/ping';
+    const HISTORY_KEY = 'netshield.toolkit.pingHistory';
+    const HISTORY_MAX = 8;
+
+    const $ = (id) => document.getElementById(id);
+    const form = $('ping-form');
+    const select = $('device-select');
+    const input = $('target-ip');
+    const btn = $('btn-run-ping');
+    const term = $('term-output');
+    const badge = $('term-badge');
+    const badgeText = $('term-badge-text');
+    const promptUser = $('terminal').dataset.user || 'operator';
+
+    let running = false;
+
+    // ---------------- Terminal helpers ----------------
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const scrollBottom = () => { term.scrollTop = term.scrollHeight; };
+
+    function removeIdlePrompt() {
+        const p = $('idle-prompt');
+        if (p) p.remove();
+    }
+
+    function appendLine(text, cls = '') {
+        const span = document.createElement('span');
+        span.className = 'tk-line' + (cls ? ' ' + cls : '');
+        span.textContent = text.length ? text : ' ';
+        term.appendChild(span);
+        scrollBottom();
+        return span;
+    }
+
+    function appendPrompt(cmd, withCursor = false) {
+        const line = document.createElement('span');
+        line.className = 'tk-line prompt';
+        const u = document.createElement('span'); u.className = 'user'; u.textContent = promptUser + '@netshield';
+        const p = document.createElement('span'); p.className = 'path'; p.textContent = '~/toolkit/icmp';
+        const c = document.createElement('span'); c.className = 'cmd'; c.textContent = cmd;
+        line.append(u, ':', p, '$ ', c);
+        if (withCursor) {
+            line.id = 'idle-prompt';
+            const cur = document.createElement('span'); cur.className = 'tk-cursor';
+            line.appendChild(cur);
+        }
+        term.appendChild(line);
+        scrollBottom();
+        return line;
+    }
+
+    function classifyLine(line) {
+        if (/^\[NETSHIELD\]/.test(line)) return 'err';
+        if (/(timed out|waktu habis|unreachable|tidak dapat dijangkau|could not find|tidak dapat menemukan|unknown host|not known|name or service|general failure|kegagalan umum|transmit failed|100% (packet )?loss|\(100% |100% hilang)/i.test(line)) return 'err';
+        if (/(reply from|balasan dari|bytes from|byte dari|ttl=)/i.test(line)) return 'ok';
+        if (/(statistic|statistik|packets|paket:|approximate|perkiraan|round[- ]trip|rtt |min\/avg|minimum|maximum|maksimum|average|rata-rata|% (packet )?loss)/i.test(line)) return 'stat';
+        if (/^(pinging|ping |menge-?ping|PING )/i.test(line.trim())) return 'head';
+        return '';
+    }
+
+    async function typeOutput(raw) {
+        const lines = String(raw || '').replace(/\r/g, '').split('\n');
+        // Ritme mirip konsol: baris reply sedikit lebih lambat dari baris ringkasan
+        for (const line of lines) {
+            const cls = classifyLine(line);
+            appendLine(line, cls);
+            await sleep(cls === 'ok' || cls === 'err' ? 110 : 45);
+        }
+    }
+
+    function setBadge(state, text) {
+        badge.className = 'tk-badge ' + state;
+        badgeText.textContent = text;
+    }
+
+    function setMetric(id, text, tone = '') {
+        const el = $(id);
+        el.textContent = text;
+        el.className = 'v' + (tone ? ' ' + tone : '');
+        el.title = text;
+    }
+
+    function rttTone(ms) {
+        if (ms == null) return 'bad';
+        if (ms < 50) return 'good';
+        if (ms < 150) return 'warn';
+        return 'bad';
+    }
+
+    function fmtMs(ms) {
+        if (ms == null) return '—';
+        return (ms < 10 ? ms.toFixed(2) : ms < 100 ? ms.toFixed(1) : Math.round(ms)) + ' ms';
+    }
+
+    // ---------------- Button state ----------------
+    function setRunning(on) {
+        running = on;
+        btn.disabled = on;
+        select.disabled = on;
+        $('btn-run-icon').innerHTML = on
+            ? '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span>'
+            : '<i class="bi bi-lightning-charge-fill"></i>';
+        $('btn-run-label').textContent = on ? 'Probing…' : 'Jalankan ICMP Ping';
+    }
+
+    // ---------------- Validation ----------------
+    const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}(:\d{1,5})?$/;
+    const HOST = /^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*\.?(:\d{1,5})?$/;
+    function validTarget(v) {
+        if (!v) return 'Target IP/Host wajib diisi.';
+        if (v.startsWith('-')) return 'Target tidak boleh diawali tanda "-".';
+        if (IPV4.test(v) || HOST.test(v) || v.includes(':') || v.includes('://')) return ''; // IPv6/URL divalidasi server
+        return 'Format IP / hostname tidak valid.';
+    }
+    function showTargetError(msg) {
+        const el = $('target-error');
+        el.textContent = msg;
+        el.classList.toggle('d-none', !msg);
+        input.classList.toggle('is-invalid', !!msg);
+    }
+
+    // ---------------- History ----------------
+    function loadHistory() {
+        try { return JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
+    }
+    function saveHistory(list) {
+        try { sessionStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX))); } catch { /* storage penuh/diblokir */ }
+    }
+    function renderHistory() {
+        const ul = $('probe-history');
+        const list = loadHistory();
+        ul.innerHTML = '';
+        if (!list.length) {
+            const li = document.createElement('li');
+            li.className = 'text-[12px] text-slate-500';
+            li.textContent = 'Belum ada probe dijalankan.';
+            ul.appendChild(li);
+            return;
+        }
+        list.forEach((h, i) => {
+            const li = document.createElement('li');
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.id = 'history-item-' + i;
+            b.title = 'Jalankan ulang ping ke ' + h.target;
+            const dot = document.createElement('span'); dot.className = 'dot ' + (h.alive ? 'up' : 'down');
+            const host = document.createElement('span'); host.className = 'host'; host.textContent = h.target;
+            const meta = document.createElement('span'); meta.className = 'meta';
+            meta.textContent = (h.alive ? fmtMs(h.avg) : 'RTO') + ' · x' + h.count + ' · ' + h.time;
+            b.append(dot, host, meta);
+            b.addEventListener('click', () => { input.value = h.target; checkCount(h.count); syncSelect(); runPing(); });
+            li.appendChild(b);
+            ul.appendChild(li);
+        });
+    }
+    function pushHistory(entry) {
+        const list = loadHistory().filter(h => !(h.target === entry.target && h.count === entry.count));
+        list.unshift(entry);
+        saveHistory(list);
+        renderHistory();
+    }
+
+    // ---------------- Device select <-> input ----------------
+    function showDeviceInfo(opt) {
+        const box = $('device-info');
+        if (!opt || !opt.value) { box.classList.add('d-none'); box.textContent = ''; return; }
+        box.innerHTML = '';
+        const d = opt.dataset;
+        const parts = [['Perangkat', d.name], ['Lokasi', d.loc], ['Jenis', d.type], ['Status terakhir', d.status]];
+        parts.forEach(([k, v], i) => {
+            if (i) box.append(' · ');
+            box.append(k + ': ');
+            const s = document.createElement('strong'); s.textContent = v || '-';
+            box.appendChild(s);
+        });
+        box.classList.remove('d-none');
+    }
+
+    function syncSelect() {
+        const v = input.value.trim();
+        const match = Array.from(select.options).find(o => o.value && o.value === v);
+        select.value = match ? match.value : '';
+        showDeviceInfo(match || null);
+    }
+
+    function checkCount(n) {
+        const r = document.getElementById('count-' + n);
+        if (r) r.checked = true;
+    }
+
+    select.addEventListener('change', () => {
+        const opt = select.selectedOptions[0];
+        if (opt && opt.value) {
+            input.value = opt.value;
+            input.classList.remove('flash'); void input.offsetWidth; input.classList.add('flash');
+            showTargetError('');
+        }
+        showDeviceInfo(opt);
+    });
+    input.addEventListener('input', () => { showTargetError(''); syncSelect(); });
+
+    document.querySelectorAll('.tk-quick').forEach(b => b.addEventListener('click', () => {
+        input.value = b.dataset.target;
+        syncSelect();
+        showTargetError('');
+        input.focus();
+    }));
+
+    // ---------------- Core: run ping ----------------
+    async function runPing() {
+        if (running) return;
+        const target = input.value.trim();
+        const err = validTarget(target);
+        if (err) { showTargetError(err); input.focus(); return; }
+        showTargetError('');
+
+        const count = parseInt((form.querySelector('input[name="count"]:checked') || {}).value || '4', 10);
+        const t0 = performance.now();
+
+        setRunning(true);
+        setBadge('probing', 'PROBING');
+        setMetric('m-target', target);
+        setMetric('m-rtt', '…');
+        setMetric('m-count', count + ' paket');
+        setMetric('m-duration', '…');
+
+        removeIdlePrompt();
+        appendLine(' ');
+        appendPrompt('icmp-probe --target ' + target + ' --count ' + count);
+        const waitLine = appendLine('', 'dim');
+        const ticker = setInterval(() => {
+            const s = ((performance.now() - t0) / 1000).toFixed(1);
+            waitLine.textContent = '⠿ Mengirim ' + count + ' paket ICMP Echo Request ke ' + target + ' … ' + s + 's';
+        }, 100);
+
+        const controller = new AbortController();
+        const clientTimeout = setTimeout(() => controller.abort(), (count * 2 + 20) * 1000);
+
+        let data = null;
+        let failMsg = '';
+        try {
+            const res = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ target_ip: target, count }),
+                credentials: 'same-origin',
+                signal: controller.signal,
+            });
+            const ctype = res.headers.get('content-type') || '';
+            if (!ctype.includes('application/json')) {
+                failMsg = res.redirected || res.url.includes('/login')
+                    ? 'Sesi login berakhir. Muat ulang halaman lalu login kembali.'
+                    : 'Respons server tidak valid (HTTP ' + res.status + ').';
+            } else {
+                data = await res.json();
+                if (!res.ok) failMsg = data.error || data.detail || ('HTTP ' + res.status);
+            }
+        } catch (e) {
+            failMsg = e.name === 'AbortError'
+                ? 'Permintaan dibatalkan: server tidak merespons dalam batas waktu.'
+                : 'Gagal menghubungi server NOC: ' + e.message;
+        } finally {
+            clearInterval(ticker);
+            clearTimeout(clientTimeout);
+            waitLine.remove();
+        }
+
+        const duration = data && data.duration_ms != null ? data.duration_ms : Math.round(performance.now() - t0);
+        setMetric('m-duration', (duration / 1000).toFixed(2) + ' s');
+
+        if (failMsg) {
+            appendLine('[NETSHIELD] ' + failMsg, 'err');
+            setBadge('offline', 'ERROR');
+            setMetric('m-rtt', '—', 'bad');
+            if (data && data.error) showTargetError(data.error);
+        } else {
+            if (data.command) appendLine('> ' + data.command, 'dim');
+            await typeOutput(data.raw_output);
+            appendLine(' ');
+            if (data.is_alive) {
+                const ms = fmtMs(data.avg_latency_ms);
+                appendLine('✔ HOST ONLINE · ' + data.target + ' · avg ' + ms, 'verdict-up');
+                setBadge('online', 'ONLINE · ' + ms);
+                setMetric('m-rtt', ms, rttTone(data.avg_latency_ms));
+            } else {
+                appendLine('✖ HOST OFFLINE / RTO · ' + data.target + ' tidak membalas ICMP Echo', 'verdict-down');
+                setBadge('offline', 'OFFLINE / RTO');
+                setMetric('m-rtt', 'RTO', 'bad');
+            }
+            setMetric('m-target', data.target);
+            pushHistory({
+                target: data.target, alive: !!data.is_alive, avg: data.avg_latency_ms, count,
+                time: new Date().toLocaleTimeString('id-ID', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            });
+        }
+
+        appendLine(' ');
+        appendPrompt('', true);
+        setRunning(false);
+    }
+
+    form.addEventListener('submit', (e) => { e.preventDefault(); runPing(); });
+
+    // ---------------- Terminal toolbar ----------------
+    $('btn-clear-term').addEventListener('click', () => {
+        if (running) return;
+        term.innerHTML = '';
+        appendLine('Layar dibersihkan · ' + new Date().toLocaleTimeString('id-ID', { hour12: false }), 'dim');
+        appendPrompt('', true);
+        setBadge('idle', 'IDLE');
+        ['m-target', 'm-rtt', 'm-count', 'm-duration'].forEach(id => setMetric(id, '—'));
+    });
+
+    $('btn-copy-output').addEventListener('click', async (e) => {
+        const icon = e.currentTarget.querySelector('i');
+        try {
+            await navigator.clipboard.writeText(term.innerText.trim());
+            icon.className = 'bi bi-clipboard-check text-green-400';
+        } catch {
+            icon.className = 'bi bi-clipboard-x text-red-400';
+        }
+        setTimeout(() => { icon.className = 'bi bi-clipboard'; }, 1500);
+    });
+
+    $('btn-clear-history').addEventListener('click', () => { saveHistory([]); renderHistory(); });
+
+    // ---------------- Init ----------------
+    renderHistory();
+    if (input.value.trim()) syncSelect();
+    input.focus();
+})();
+</script>
+{% endblock %}

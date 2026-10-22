@@ -265,10 +265,10 @@
             <div class="unit-count"><span class="num">{{ rs.total }}</span><span class="lbl">perangkat</span></div>
             <div class="unit-bar" aria-hidden="true">
                 {% if rs.total %}
-                <span class="seg-up" style="width:{{ (rs.up * 100 / rs.total)|round(2) }}%"></span>
-                <span class="seg-warn" style="width:{{ (rs.warning * 100 / rs.total)|round(2) }}%"></span>
-                <span class="seg-down" style="width:{{ (rs.down * 100 / rs.total)|round(2) }}%"></span>
-                <span class="seg-maint" style="width:{{ (rs.maintenance * 100 / rs.total)|round(2) }}%"></span>
+                <span class="seg-up" data-pct="{{ (rs.up * 100 / rs.total)|round(2) }}"></span>
+                <span class="seg-warn" data-pct="{{ (rs.warning * 100 / rs.total)|round(2) }}"></span>
+                <span class="seg-down" data-pct="{{ (rs.down * 100 / rs.total)|round(2) }}"></span>
+                <span class="seg-maint" data-pct="{{ (rs.maintenance * 100 / rs.total)|round(2) }}"></span>
                 {% endif %}
             </div>
             <div class="unit-badges">
@@ -295,10 +295,10 @@
             <div class="unit-count"><span class="num">{{ u.total }}</span><span class="lbl">perangkat</span></div>
             <div class="unit-bar" aria-hidden="true">
                 {% if u.total %}
-                <span class="seg-up" style="width:{{ (u.up * 100 / u.total)|round(2) }}%"></span>
-                <span class="seg-warn" style="width:{{ (u.warning * 100 / u.total)|round(2) }}%"></span>
-                <span class="seg-down" style="width:{{ (u.down * 100 / u.total)|round(2) }}%"></span>
-                <span class="seg-maint" style="width:{{ (u.maintenance * 100 / u.total)|round(2) }}%"></span>
+                <span class="seg-up" data-pct="{{ (u.up * 100 / u.total)|round(2) }}"></span>
+                <span class="seg-warn" data-pct="{{ (u.warning * 100 / u.total)|round(2) }}"></span>
+                <span class="seg-down" data-pct="{{ (u.down * 100 / u.total)|round(2) }}"></span>
+                <span class="seg-maint" data-pct="{{ (u.maintenance * 100 / u.total)|round(2) }}"></span>
                 {% endif %}
             </div>
             <div class="unit-badges">
@@ -376,7 +376,7 @@
                 {% for d in devices %}
                 {% set dtype = d.device_type.value if d.device_type else '' %}
                 {% set zone_label = d.area.value if d.area else '' %}
-                <tr class="inv-row" style="animation-delay:{{ [loop.index0 * 18, 400]|min }}ms" data-name="{{ d.name|lower }}" data-ip="{{ d.ip_address }}" data-loc="{{ (d.location_name or '')|lower }}" data-zone="{{ zone_label }}" data-type="{{ dtype }}">
+                <tr class="inv-row" data-name="{{ d.name|lower }}" data-ip="{{ d.ip_address }}" data-loc="{{ (d.location_name or '')|lower }}" data-zone="{{ zone_label }}" data-type="{{ dtype }}">
                     <td class="font-monospace text-secondary small">#{{ d.id }}</td>
                     <td>
                         <div class="fw-bold text-white">{{ d.name }}</div>
@@ -460,7 +460,7 @@
 <!-- =========================================================
      MODAL: TAMBAH PERANGKAT
 ========================================================= -->
-<div class="modal fade noc-modal" id="addDeviceModal" tabindex="-1" aria-labelledby="addDeviceModalLabel" aria-hidden="true">
+<div class="modal fade noc-modal" id="addDeviceModal" data-prefill-location="{{ prefill_location or '' }}" data-prefill-site-type="{{ active_unit.site_type if active_unit and active_unit.site_type else '' }}" tabindex="-1" aria-labelledby="addDeviceModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <form id="add-device-form" action="/devices/add" method="post" autocomplete="off">
@@ -577,6 +577,16 @@
 
 {% block scripts %}
 <script>
+    // ---------- Visual: lebar segmen bar unit & stagger animasi baris (nilai dari data-*) ----------
+    document.querySelectorAll('.inv-row').forEach((row, i) => {
+        row.style.animationDelay = Math.min(i * 18, 400) + 'ms';
+    });
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        document.querySelectorAll('.unit-bar [data-pct]').forEach(seg => {
+            seg.style.width = seg.dataset.pct + '%';
+        });
+    }));
+
     // ---------- Filter tabel ----------
     function filterInventoryTable() {
         const query = document.getElementById('search-device').value.toLowerCase().trim();
@@ -648,9 +658,10 @@
     lockOnSubmit('delete-device-form', 'delete-device-submit', 'Menghapus...');
 
     // ---------- Modal Tambah: form bersih, lokasi & tipe site terisi otomatis sesuai unit aktif ----------
-    const PREFILL_LOCATION = {{ prefill_location|tojson }};
-    const PREFILL_SITE_TYPE = {{ (active_unit.site_type if active_unit and active_unit.site_type else '')|tojson }};
-    document.getElementById('addDeviceModal').addEventListener('show.bs.modal', () => {
+    const addModalEl = document.getElementById('addDeviceModal');
+    const PREFILL_LOCATION = addModalEl.dataset.prefillLocation || '';
+    const PREFILL_SITE_TYPE = addModalEl.dataset.prefillSiteType || '';
+    addModalEl.addEventListener('show.bs.modal', () => {
         document.getElementById('add-device-form').reset();
         if (PREFILL_LOCATION) document.getElementById('add-location').value = PREFILL_LOCATION;
         if (PREFILL_SITE_TYPE) document.getElementById('add-site-type').value = PREFILL_SITE_TYPE;
