@@ -49,11 +49,25 @@ class Device(Base):
     is_maintenance = Column(Boolean, default=False, nullable=False)
     last_check = Column(DateTime, nullable=True)
 
+    # ── SNMP v2c Configuration ──────────────────────────────────────────────
+    snmp_enabled = Column(Boolean, default=False, nullable=False)
+    snmp_version = Column(String(10), default="2c", nullable=False)
+    snmp_community = Column(String(100), default="public", nullable=False)
+    snmp_port = Column(Integer, default=161, nullable=False)
+
+    # ── SNMP Collected Metrics (updated by background poller) ───────────────
+    cpu_usage = Column(Float, nullable=True)          # percentage 0-100
+    memory_usage = Column(Float, nullable=True)       # percentage 0-100
+    uptime_str = Column(String(100), nullable=True)   # human-readable uptime
+    sys_descr = Column(Text, nullable=True)           # sysDescr OID value
+    last_snmp_check = Column(DateTime, nullable=True) # last successful SNMP poll
+
     # Relasi Self-Referencing Parent-Child
     children = relationship("Device", backref=backref("parent", remote_side=[id]), cascade="all, delete-orphan")
 
     # Relasi Bidirectional dengan IncidentLog
     incidents = relationship("IncidentLog", back_populates="device", cascade="all, delete-orphan")
+
 
 
 # Alias MonitoredService -> Device untuk backward compatibility

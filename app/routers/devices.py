@@ -733,6 +733,31 @@ def _build_device_fields(
     }
 
 
+def _build_snmp_fields(
+    snmp_enabled: Optional[str],
+    snmp_community: Optional[str],
+    snmp_port: Optional[str],
+) -> dict:
+    """
+    Normalisasi field konfigurasi SNMP dari form HTML.
+    Mengembalikan dict siap di-setattr() ke objek Device.
+    """
+    enabled = bool(snmp_enabled and snmp_enabled.strip().lower() not in ("false", "0", "", "off"))
+    community = (snmp_community or "public").strip()[:100] or "public"
+    try:
+        port = int((snmp_port or "161").strip())
+        if not 1 <= port <= 65535:
+            port = 161
+    except (ValueError, TypeError):
+        port = 161
+    return {
+        "snmp_enabled": enabled,
+        "snmp_community": community,
+        "snmp_port": port,
+        "snmp_version": "2c",
+    }
+
+
 @web_router.get("", response_class=HTMLResponse)
 @web_router.get("/", response_class=HTMLResponse)
 def devices_inventory_view(request: Request, location: Optional[str] = LOCATION_QUERY, db: Session = Depends(get_db)):
@@ -797,15 +822,19 @@ def add_device_form(
     site_type: Optional[str] = Form(None),
     level: Optional[str] = Form(None),
     parent_id: Optional[str] = Form(None),
+    snmp_enabled: Optional[str] = Form(None),
+    snmp_community: Optional[str] = Form(None),
+    snmp_port: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
-    """POST /devices/add: simpan perangkat baru (termasuk location_name, site_type, level, parent_id)."""
+    """POST /devices/add: simpan perangkat baru (termasuk location_name, site_type, level, parent_id, SNMP config)."""
     try:
         fields = _build_device_fields(
             db, name=name, ip_address=ip_address, device_type=device_type, area=area,
             location_name=location_name, site_type=site_type, level=level, parent_id=parent_id,
         )
-        device = Device(**fields, status="UP", response_time_ms=0.0, is_maintenance=False)
+        snmp_fields = _build_snmp_fields(snmp_enabled, snmp_community, snmp_port)
+        device = Device(**fields, **snmp_fields, status="UP", response_time_ms=0.0, is_maintenance=False)
         db.add(device)
         _audit(db, request, f"Created device: {fields['name']} ({fields['ip_address']})")
         db.commit()
@@ -985,9 +1014,12 @@ def edit_device_form(
     site_type: Optional[str] = Form(None),
     level: Optional[str] = Form(None),
     parent_id: Optional[str] = Form(None),
+    snmp_enabled: Optional[str] = Form(None),
+    snmp_community: Optional[str] = Form(None),
+    snmp_port: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
-    """POST /devices/{device_id}/edit: ubah perangkat (parent tidak boleh diri sendiri / turunannya)."""
+    """POST /devices/{device_id}/edit: ubah perangkat (parent tidak boleh diri sendiri / turunannya, termasuk SNMP config)."""
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         _flash(request, "danger", f"Perangkat dengan ID #{device_id} tidak ditemukan.")
@@ -999,7 +1031,8 @@ def edit_device_form(
             location_name=location_name, site_type=site_type, level=level, parent_id=parent_id,
             device_id=device_id,
         )
-        for key, value in fields.items():
+        snmp_fields = _build_snmp_fields(snmp_enabled, snmp_community, snmp_port)
+        for key, value in {**fields, **snmp_fields}.items():
             setattr(device, key, value)
         _audit(db, request, f"Updated device ID {device_id} ({fields['name']})")
         db.commit()
@@ -1014,6 +1047,64 @@ def edit_device_form(
 
     _flash(request, "success", f"Perangkat '{fields['name']}' berhasil diperbarui.")
     return _back_to_inventory(request)
+
+
+@router.post("/{device_id}/snmp-probe", tags=["Devices"])
+async def api_snmp_probe(device_id: int, db: Session = Depends(get_db)):
+    """
+    POST /api/devices/{device_id}/snmp-probe
+    Trigger SNMP deep metrics fetch on-demand untuk satu perangkat.
+    Hanya bisa dijalankan jika snmp_enabled=True pada perangkat tersebut.
+    Hasil langsung disimpan ke database dan dikembalikan sebagai JSON.
+    """
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Perangkat tidak ditemukan.")
+    if not getattr(device, "snmp_enabled", False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SNMP tidak diaktifkan pada perangkat ini. Aktifkan snmp_enabled=True terlebih dahulu."
+        )
+
+    try:
+        from app.utils.snmp import fetch_snmp_metrics
+        from app.core.timeutil import now_wib
+
+        clean_ip = device.ip_address.split(":")[0] if ":" in device.ip_address else device.ip_address
+        result = await fetch_snmp_metrics(
+            ip=clean_ip,
+            community=device.snmp_community or "public",
+            port=device.snmp_port or 161,
+            timeout=2,
+        )
+
+        now = now_wib()
+        device.last_snmp_check = now
+        if result["status"]:
+            if result["cpu_usage"] is not None:
+                device.cpu_usage = result["cpu_usage"]
+            if result["memory_usage"] is not None:
+                device.memory_usage = result["memory_usage"]
+            if result["uptime"] is not None:
+                device.uptime_str = result["uptime"]
+            if result["sys_descr"] is not None:
+                device.sys_descr = result["sys_descr"]
+        db.commit()
+
+        return {
+            "device_id": device_id,
+            "device_name": device.name,
+            "ip_address": clean_ip,
+            "snmp_status": result["status"],
+            "sys_descr": result["sys_descr"],
+            "uptime": result["uptime"],
+            "cpu_usage": result["cpu_usage"],
+            "memory_usage": result["memory_usage"],
+            "last_snmp_check": now.isoformat(),
+            "error": result.get("error", ""),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
 @web_router.post("/{device_id}/delete")
