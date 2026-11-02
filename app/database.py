@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
 
@@ -7,11 +7,31 @@ load_dotenv()
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./netshield.db")
 
+IS_SQLITE = SQLALCHEMY_DATABASE_URL.startswith("sqlite")
+
 # connect_args={"check_same_thread": False} is required for SQLite in FastAPI multi-threaded context
+# timeout=5 -> driver menunggu lock dilepas (bukan langsung "database is locked"). Dibuat
+# pendek karena poller background menjalankan query sinkron di event loop.
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False} if SQLALCHEMY_DATABASE_URL.startswith("sqlite") else {}
+    connect_args={"check_same_thread": False, "timeout": 5} if IS_SQLITE else {}
 )
+
+if IS_SQLITE:
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(dbapi_conn, _record):
+        """
+        WAL: pembaca (halaman dashboard/API) tidak memblokir penulis (poller background)
+        dan sebaliknya. busy_timeout: tunggu hingga 5 detik saat ada penulis lain.
+        synchronous=NORMAL aman untuk WAL dan mengurangi fsync per commit.
+        """
+        cur = dbapi_conn.cursor()
+        try:
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=5000")
+            cur.execute("PRAGMA synchronous=NORMAL")
+        finally:
+            cur.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

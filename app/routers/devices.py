@@ -1079,8 +1079,9 @@ async def api_snmp_probe(device_id: int, db: Session = Depends(get_db)):
         )
 
         now = now_wib()
-        device.last_snmp_check = now
         if result["status"]:
+            # last_snmp_check = poll SNMP terakhir yang BERHASIL (selaras dengan checker.py)
+            device.last_snmp_check = now
             if result["cpu_usage"] is not None:
                 device.cpu_usage = result["cpu_usage"]
             if result["memory_usage"] is not None:
@@ -1089,7 +1090,7 @@ async def api_snmp_probe(device_id: int, db: Session = Depends(get_db)):
                 device.uptime_str = result["uptime"]
             if result["sys_descr"] is not None:
                 device.sys_descr = result["sys_descr"]
-        db.commit()
+            db.commit()
 
         return {
             "device_id": device_id,

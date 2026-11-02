@@ -12,6 +12,16 @@ logger = logging.getLogger(__name__)
 
 FONNTE_API_URL = "https://api.fonnte.com/send"
 
+# Label lokasi bila perangkat tidak memiliki location_name (mis. DummyDevice legacy).
+DEFAULT_LOCATION_LABEL = "Unit JBT"
+
+
+def _resolve_location_name(device) -> str:
+    """Nama lokasi dinamis dari device.location_name; fallback ke DEFAULT_LOCATION_LABEL bila kosong."""
+    raw = getattr(device, "location_name", None)
+    name = str(raw).strip() if raw is not None else ""
+    return name or DEFAULT_LOCATION_LABEL
+
 
 def _resolve_target_for_device(device) -> str:
     """
@@ -58,6 +68,7 @@ def _get_wib_timestamp(dt: datetime | None = None) -> str:
 
 def _format_incident_message(device, incident) -> str:
     zona_name = device.area.value if hasattr(device.area, "value") else str(device.area)
+    location_name = _resolve_location_name(device)
     device_name = device.name
     ip_address = device.ip_address
     severity = getattr(incident, "severity", "CRITICAL") or "CRITICAL"
@@ -71,7 +82,7 @@ def _format_incident_message(device, incident) -> str:
         return (
             "⚠️ *[WARNING] PERTAMINA NETSHIELD - DEGRADASI LATENSI* ⚠️\n"
             f"*ID Insiden:* #{incident_id}\n"
-            "*Lokasi:* Fuel Terminal Pengapon\n"
+            f"*Lokasi:* {location_name}\n"
             f"*Zona:* {zona_name}\n"
             f"*Perangkat:* {device_name} ({ip_address})\n"
             "*Status:* DEGRADED (High Latency)\n"
@@ -87,7 +98,7 @@ def _format_incident_message(device, incident) -> str:
     return (
         "🚨 *[CRITICAL] PERTAMINA NETSHIELD - NETWORK DOWN ALERT* 🚨\n"
         f"*ID Insiden:* #{incident_id}\n"
-        "*Lokasi:* Fuel Terminal Pengapon\n"
+        f"*Lokasi:* {location_name}\n"
         f"*Zona:* {zona_name}\n"
         f"*Perangkat:* {device_name} ({ip_address})\n"
         "*Status:* DOWN (Unreachable)\n"
@@ -102,6 +113,7 @@ def _format_incident_message(device, incident) -> str:
 
 def _format_recovery_message(device, incident=None, latency: float = 0.0) -> str:
     zona_name = device.area.value if hasattr(device.area, "value") else str(device.area)
+    location_name = _resolve_location_name(device)
     device_name = device.name
     ip_address = device.ip_address
 
@@ -126,7 +138,7 @@ def _format_recovery_message(device, incident=None, latency: float = 0.0) -> str
 
     msg_lines = [
         "✅ *PERTAMINA NETSHIELD - RESOLVED ALERT* ✅",
-        "*Lokasi:* Fuel Terminal Pengapon",
+        f"*Lokasi:* {location_name}",
         f"*Zona:* {zona_name}",
         f"*Perangkat:* {device_name} ({ip_address})",
         "*Status:* UP (Recovered)",

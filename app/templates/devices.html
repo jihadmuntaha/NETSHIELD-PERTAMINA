@@ -97,6 +97,39 @@
     @keyframes unitPulse { 0%,100% { box-shadow:0 0 0 3px rgba(239,68,68,.25); } 50% { box-shadow:0 0 0 6px rgba(239,68,68,.05); } }
     @keyframes unitSpin { to { transform:rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { .inv-row, .unit-card, .unit-dot { animation:none !important; transition:none !important; } }
+
+    /* ===== SNMP v2c Deep Metrics ===== */
+    .snmp-cell { min-width:200px; }
+    .snmp-uptime { display:flex; align-items:center; gap:.4rem; font-size:.72rem; color:#cbd5e1; font-variant-numeric:tabular-nums; white-space:nowrap; cursor:help; }
+    .snmp-uptime i { color:#38bdf8; }
+    .cpu-meter { margin-top:.45rem; }
+    .cpu-meter-head { display:flex; justify-content:space-between; align-items:baseline; font-size:.6rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:#64748b; margin-bottom:.22rem; }
+    .cpu-meter-head .cpu-val { font-size:.74rem; letter-spacing:0; font-variant-numeric:tabular-nums; }
+    .cpu-progress { height:6px; background:#1e293b; border-radius:999px; overflow:hidden; }
+    .cpu-progress .progress-bar { width:0; border-radius:999px; transition:width .7s cubic-bezier(.22,1,.36,1); }
+    .cpu-ok .progress-bar { background:linear-gradient(90deg,#059669,#34d399); }
+    .cpu-ok .cpu-val { color:#34d399; }
+    .cpu-warn .progress-bar { background:linear-gradient(90deg,#ca8a04,#facc15); }
+    .cpu-warn .cpu-val { color:#facc15; }
+    .cpu-crit .progress-bar { background:linear-gradient(90deg,#b91c1c,#f87171); box-shadow:0 0 8px rgba(248,113,113,.55); }
+    .cpu-crit .cpu-val { color:#f87171; }
+    .cpu-crit .cpu-progress { animation:cpuAlarm 1.8s ease-in-out infinite; }
+    @keyframes cpuAlarm { 0%,100% { box-shadow:0 0 0 0 rgba(239,68,68,0); } 50% { box-shadow:0 0 0 3px rgba(239,68,68,.18); } }
+    .snmp-foot { display:flex; flex-wrap:wrap; gap:.6rem; margin-top:.35rem; font-size:.62rem; color:#64748b; white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .snmp-note { display:inline-flex; align-items:center; gap:.35rem; font-size:.68rem; color:#64748b; white-space:nowrap; }
+    .snmp-note.pending { color:#38bdf8; }
+    .snmp-note.pending i { display:inline-block; animation:unitSpin 1.4s linear infinite; }
+    .snmp-panel { border:1px solid #1e293b; border-radius:.85rem; padding:.9rem 1rem; background:linear-gradient(160deg, rgba(14,165,233,.07) 0%, rgba(2,6,23,.65) 70%); transition:border-color .2s ease; }
+    .snmp-panel:not(.is-off) { border-color:rgba(14,165,233,.4); }
+    .snmp-panel .form-check-input { width:2.4em; height:1.25em; background-color:#1e293b; border-color:#334155; cursor:pointer; }
+    .snmp-panel .form-check-input:checked { background-color:#0ea5e9; border-color:#0ea5e9; }
+    .snmp-panel .form-check-input:focus { box-shadow:0 0 0 .2rem rgba(14,165,233,.25); }
+    .snmp-fields { transition:opacity .2s ease; }
+    .snmp-panel.is-off .snmp-fields { opacity:.4; }
+    .snmp-badge { flex-shrink:0; font-size:.6rem; font-weight:800; letter-spacing:.1em; padding:.2rem .5rem; border-radius:.4rem; background:rgba(14,165,233,.12); color:#7dd3fc; border:1px solid rgba(14,165,233,.3); }
+    .noc-input-btn { background:#0f172a; border:1px solid #334155; color:#94a3b8; }
+    .noc-input-btn:hover { color:#fff; background:#1e293b; }
+    @media (prefers-reduced-motion: reduce) { .cpu-progress, .cpu-progress .progress-bar, .snmp-note.pending i { animation:none !important; transition:none !important; } }
 </style>
 
 {# ---- Field set dipakai bersama oleh modal Tambah & Edit (prefix id: add / edit) ---- #}
@@ -147,6 +180,31 @@
             <option value="">&mdash; Tanpa parent (root) &mdash;</option>
             {% for pd in all_devices %}<option value="{{ pd.id }}">{{ pd.name }} ({{ pd.ip_address }}) &middot; {{ pd.location_name or '-' }}</option>{% endfor %}
         </select>
+    </div>
+    <div class="col-12">
+        <div class="snmp-panel is-off" id="{{ p }}-snmp-panel">
+            <div class="d-flex align-items-start justify-content-between gap-3">
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" role="switch" id="{{ p }}-snmp-enabled" name="snmp_enabled" value="true" data-snmp-prefix="{{ p }}">
+                    <label class="form-check-label fw-semibold text-light small ms-1" for="{{ p }}-snmp-enabled">Aktifkan SNMP Deep Metrics</label>
+                    <div class="text-secondary ms-1" style="font-size:.7rem;">CPU, uptime &amp; sysDescr dipoll hanya saat perangkat ONLINE.</div>
+                </div>
+                <span class="snmp-badge"><i class="bi bi-broadcast-pin me-1"></i>SNMP v2c</span>
+            </div>
+            <div class="row g-3 mt-1 snmp-fields">
+                <div class="col-md-8">
+                    <label class="noc-label" for="{{ p }}-snmp-community">Community String</label>
+                    <div class="input-group">
+                        <input id="{{ p }}-snmp-community" name="snmp_community" type="password" maxlength="100" value="public" autocomplete="new-password" spellcheck="false" class="form-control noc-input font-monospace">
+                        <button type="button" id="{{ p }}-snmp-community-toggle" class="btn noc-input-btn" data-toggle-secret="{{ p }}-snmp-community" title="Tampilkan / sembunyikan" aria-label="Tampilkan community string"><i class="bi bi-eye"></i></button>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <label class="noc-label" for="{{ p }}-snmp-port">Port UDP</label>
+                    <input id="{{ p }}-snmp-port" name="snmp_port" type="number" min="1" max="65535" value="161" class="form-control noc-input font-monospace">
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 {% endmacro %}
@@ -369,6 +427,7 @@
                     <th>Parent</th>
                     <th>Jenis</th>
                     <th>Status</th>
+                    <th>Performa (SNMP)</th>
                     <th class="text-end">Aksi</th>
                 </tr>
             </thead>
@@ -416,6 +475,38 @@
                         <span class="noc-chip animate-pulse" style="background:rgba(239,68,68,.15);color:#f87171;border-color:rgba(239,68,68,.3);"><i class="bi bi-circle-fill" style="font-size:.5rem;"></i>OFFLINE</span>
                         {% endif %}
                     </td>
+                    <td class="snmp-cell" id="snmp-cell-{{ d.id }}">
+                        {% set is_online = (not d.is_maintenance) and d.status in ['UP', 'NORMAL'] %}
+                        {% if d.snmp_enabled and is_online %}
+                            {% if d.uptime_str or d.cpu_usage is not none %}
+                            <div class="snmp-uptime" title="{{ d.sys_descr or 'sysDescr belum tersedia' }}">
+                                <i class="bi bi-clock-history"></i><span>Uptime {{ d.uptime_str or 'N/A' }}</span>
+                            </div>
+                            {% if d.cpu_usage is not none %}
+                            {% set cpu = d.cpu_usage %}
+                            {% set cpu_lvl = 'crit' if cpu > 85 else ('warn' if cpu >= 70 else 'ok') %}
+                            <div class="cpu-meter cpu-{{ cpu_lvl }}">
+                                <div class="cpu-meter-head"><span><i class="bi bi-cpu me-1"></i>CPU Utilization</span><span class="cpu-val">{{ '%.1f'|format(cpu) }}%</span></div>
+                                <div class="progress cpu-progress" role="progressbar" aria-label="CPU Utilization {{ d.name }}" aria-valuenow="{{ cpu|round(1) }}" aria-valuemin="0" aria-valuemax="100">
+                                    <div class="progress-bar" data-pct="{{ [[cpu, 0]|max, 100]|min }}"></div>
+                                </div>
+                            </div>
+                            {% else %}
+                            <div class="snmp-note mt-1"><i class="bi bi-cpu"></i>CPU N/A (OID tidak didukung)</div>
+                            {% endif %}
+                            <div class="snmp-foot">
+                                {% if d.memory_usage is not none %}<span title="Memory Utilization"><i class="bi bi-memory me-1"></i>MEM {{ '%.0f'|format(d.memory_usage) }}%</span>{% endif %}
+                                {% if d.last_snmp_check %}<span title="Poll SNMP terakhir yang berhasil"><i class="bi bi-broadcast me-1"></i>{{ d.last_snmp_check.strftime('%d/%m %H:%M:%S') }}</span>{% endif %}
+                            </div>
+                            {% else %}
+                            <span class="snmp-note pending"><i class="bi bi-arrow-repeat"></i>Menunggu poll SNMP&hellip;</span>
+                            {% endif %}
+                        {% elif d.snmp_enabled %}
+                            <span class="snmp-note"><i class="bi bi-pause-circle"></i>SNMP dilewati ({{ 'maintenance' if d.is_maintenance else 'offline' }})</span>
+                        {% else %}
+                            <span class="snmp-note"><i class="bi bi-dash-circle"></i>SNMP nonaktif</span>
+                        {% endif %}
+                    </td>
                     <td class="text-end">
                         <div class="d-inline-flex align-items-center gap-1">
                             <button type="button" data-device-id="{{ d.id }}" onclick="toggleMaintenance(this.dataset.deviceId)"
@@ -431,7 +522,10 @@
                                 data-site="{{ d.site_type or '' }}"
                                 data-level="{{ d.level if d.level is not none else 0 }}"
                                 data-area="{{ d.area.name if d.area else '' }}"
-                                data-parent="{{ d.parent_id or '' }}"><i class="bi bi-pencil-square"></i></button>
+                                data-parent="{{ d.parent_id or '' }}"
+                                data-snmp-enabled="{{ '1' if d.snmp_enabled else '0' }}"
+                                data-snmp-community="{{ d.snmp_community or 'public' }}"
+                                data-snmp-port="{{ d.snmp_port or 161 }}"><i class="bi bi-pencil-square"></i></button>
                             <button type="button" id="btn-delete-{{ d.id }}" title="Hapus Perangkat" class="noc-action del"
                                 data-bs-toggle="modal" data-bs-target="#deleteDeviceModal"
                                 data-id="{{ d.id }}" data-name="{{ d.name }}" data-ip="{{ d.ip_address }}"><i class="bi bi-trash3-fill"></i></button>
@@ -439,7 +533,7 @@
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="8" class="text-center py-5 text-secondary">
+                <tr><td colspan="9" class="text-center py-5 text-secondary">
                     {% if is_filtered %}
                     <i class="bi bi-geo fs-1 d-block mb-2"></i>Belum ada perangkat terdaftar di <strong class="text-light">{{ active_title }}</strong>.
                     <div class="mt-3 d-flex justify-content-center gap-2">
@@ -451,7 +545,7 @@
                     {% endif %}
                 </td></tr>
                 {% endfor %}
-                <tr id="inv-empty-filter" class="d-none"><td colspan="8" class="text-center py-4 text-secondary">Tidak ada perangkat yang cocok dengan filter.</td></tr>
+                <tr id="inv-empty-filter" class="d-none"><td colspan="9" class="text-center py-4 text-secondary">Tidak ada perangkat yang cocok dengan filter.</td></tr>
             </tbody>
         </table>
     </div>
@@ -582,7 +676,7 @@
         row.style.animationDelay = Math.min(i * 18, 400) + 'ms';
     });
     requestAnimationFrame(() => requestAnimationFrame(() => {
-        document.querySelectorAll('.unit-bar [data-pct]').forEach(seg => {
+        document.querySelectorAll('.unit-bar [data-pct], .cpu-progress [data-pct]').forEach(seg => {
             seg.style.width = seg.dataset.pct + '%';
         });
     }));
@@ -657,6 +751,42 @@
     lockOnSubmit('upload-csv-form', 'upload-csv-submit', 'Mengimpor...');
     lockOnSubmit('delete-device-form', 'delete-device-submit', 'Menghapus...');
 
+    // ---------- SNMP v2c: toggle panel & tampilkan/sembunyikan community string ----------
+    function syncSnmpState(prefix) {
+        const toggle = document.getElementById(`${prefix}-snmp-enabled`);
+        const panel = document.getElementById(`${prefix}-snmp-panel`);
+        if (!toggle || !panel) return;
+        const on = toggle.checked;
+        panel.classList.toggle('is-off', !on);
+        // readOnly (bukan disabled) agar nilai tetap ikut terkirim: community/port yang tersimpan
+        // tidak tertimpa default saat SNMP sementara dimatikan.
+        [`${prefix}-snmp-community`, `${prefix}-snmp-port`].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.readOnly = !on;
+            el.required = on;
+            el.tabIndex = on ? 0 : -1;
+        });
+    }
+    function resetSecret(prefix) {
+        const input = document.getElementById(`${prefix}-snmp-community`);
+        const btn = document.getElementById(`${prefix}-snmp-community-toggle`);
+        if (input) input.type = 'password';
+        if (btn) btn.querySelector('i').className = 'bi bi-eye';
+    }
+    document.querySelectorAll('[data-snmp-prefix]').forEach(t => {
+        t.addEventListener('change', () => syncSnmpState(t.dataset.snmpPrefix));
+    });
+    document.querySelectorAll('[data-toggle-secret]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const input = document.getElementById(btn.dataset.toggleSecret);
+            if (!input) return;
+            const show = input.type === 'password';
+            input.type = show ? 'text' : 'password';
+            btn.querySelector('i').className = show ? 'bi bi-eye-slash' : 'bi bi-eye';
+        });
+    });
+
     // ---------- Modal Tambah: form bersih, lokasi & tipe site terisi otomatis sesuai unit aktif ----------
     const addModalEl = document.getElementById('addDeviceModal');
     const PREFILL_LOCATION = addModalEl.dataset.prefillLocation || '';
@@ -665,6 +795,8 @@
         document.getElementById('add-device-form').reset();
         if (PREFILL_LOCATION) document.getElementById('add-location').value = PREFILL_LOCATION;
         if (PREFILL_SITE_TYPE) document.getElementById('add-site-type').value = PREFILL_SITE_TYPE;
+        resetSecret('add');
+        syncSnmpState('add');
     });
 
     // ---------- Modal Edit: isi otomatis dari data-* tombol pemicu ----------
@@ -691,6 +823,13 @@
             opt.hidden = isSelf;
         });
         parentSel.value = d.parent || '';
+
+        // Konfigurasi SNMP v2c
+        document.getElementById('edit-snmp-enabled').checked = d.snmpEnabled === '1';
+        document.getElementById('edit-snmp-community').value = d.snmpCommunity || 'public';
+        document.getElementById('edit-snmp-port').value = d.snmpPort || '161';
+        resetSecret('edit');
+        syncSnmpState('edit');
     });
 
     // ---------- Modal Hapus ----------
