@@ -68,6 +68,9 @@ CSV_COLUMNS = [
     "TTA_Seconds",
     "TTR_Seconds",
     "Resolution_Notes",
+    "Escalation_Level",
+    "Escalated_At",
+    "Escalation_Reason",
 ]
 
 
@@ -334,6 +337,9 @@ def export_incidents_range_csv(
                 _fmt_secs(tta_seconds_of(item)),
                 _fmt_secs(ttr_seconds_of(item)),
                 _csv_safe(item.resolution_notes),
+                item.escalation_level or 1,
+                _fmt_ts(item.escalated_at) if item.escalated_at else "",
+                _csv_safe(item.escalation_reason),
             ])
             yield drain()
 
@@ -430,6 +436,7 @@ def resolve_incident(
         device = db.query(Device).filter(Device.id == incident.device_id).first()
         if device:
             device.status = "NORMAL"
+            device.is_maintenance = False
 
     # Audit Log
     audit = AuditLog(
@@ -548,7 +555,10 @@ def export_incidents_csv(
             "SLA ACK (TTA)",
             "Waktu Selesai (WIB)",
             "SLA Resolve (TTR)",
-            "Catatan RCA"
+            "Catatan RCA",
+            "Escalation Level",
+            "Waktu Eskalasi (WIB)",
+            "Alasan Eskalasi"
         ])
         yield output.getvalue()
         output.seek(0)
@@ -571,6 +581,10 @@ def export_incidents_csv(
             tta_str = format_duration(item.tta_seconds)
             ttr_str = format_duration(item.ttr_seconds)
             latency_str = f"{item.latency_ms} ms" if item.latency_ms is not None else "-"
+            escalation_level = item.escalation_level or "-"
+            escalated_at = item.escalated_at + timedelta(hours=7) if item.escalated_at else None
+            escalated_at_str = escalated_at.strftime("%Y-%m-%d %H:%M:%S") if escalated_at else "-"
+            escalation_reason = item.escalation_reason or "-"
 
             writer.writerow([
                 f"#INC-{item.id}",
@@ -586,7 +600,10 @@ def export_incidents_csv(
                 tta_str,
                 resolved_wib_str,
                 ttr_str,
-                item.resolution_notes or "-"
+                item.resolution_notes or "-",
+                item.escalation_level or 1,
+                (item.escalated_at + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S") if item.escalated_at else "-",
+                item.escalation_reason or "-"
             ])
             yield output.getvalue()
             output.seek(0)

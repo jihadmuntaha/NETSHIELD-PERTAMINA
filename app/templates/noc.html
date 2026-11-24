@@ -6,15 +6,36 @@
 <!-- Flash Animations Style -->
 <style>
     @keyframes flashGreen {
-        0% { background-color: rgba(16, 185, 129, 0.45); box-shadow: inset 0 0 12px rgba(16, 185, 129, 0.6); }
-        100% { background-color: transparent; box-shadow: none; }
+        0% {
+            background-color: rgba(16, 185, 129, 0.45);
+            box-shadow: inset 0 0 12px rgba(16, 185, 129, 0.6);
+        }
+
+        100% {
+            background-color: transparent;
+            box-shadow: none;
+        }
     }
+
     @keyframes flashRed {
-        0% { background-color: rgba(239, 68, 68, 0.45); box-shadow: inset 0 0 12px rgba(239, 68, 68, 0.6); }
-        100% { background-color: transparent; box-shadow: none; }
+        0% {
+            background-color: rgba(239, 68, 68, 0.45);
+            box-shadow: inset 0 0 12px rgba(239, 68, 68, 0.6);
+        }
+
+        100% {
+            background-color: transparent;
+            box-shadow: none;
+        }
     }
-    .flash-green-bg { animation: flashGreen 2.5s ease-out; }
-    .flash-red-bg { animation: flashRed 2.5s ease-out; }
+
+    .flash-green-bg {
+        animation: flashGreen 2.5s ease-out;
+    }
+
+    .flash-red-bg {
+        animation: flashRed 2.5s ease-out;
+    }
 </style>
 
 <!-- Page Title Header -->
@@ -38,48 +59,6 @@
     </div>
 </div>
 
-<!-- SECTION 1: ZONE SUMMARY CARDS -->
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" id="zone-cards-container">
-    {% for zone in zone_summary %}
-    <div
-        class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg relative overflow-hidden group hover:border-slate-700 transition-all">
-        <div class="flex items-center justify-between mb-3">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 truncate max-w-[180px]">{{
-                zone.zone_name }}</h3>
-            <span class="p-2 rounded-lg bg-slate-800 text-slate-300 text-sm">
-                {% if "Zona 1" in zone.zone_name %}<i class="fa-solid fa-building"></i>
-                {% elif "Zona 2" in zone.zone_name %}<i class="fa-solid fa-oil-well"></i>
-                {% elif "Zona 3" in zone.zone_name %}<i class="fa-solid fa-truck-droplet"></i>
-                {% else %}<i class="fa-solid fa-server"></i>{% endif %}
-            </span>
-        </div>
-        <div class="flex items-baseline justify-between">
-            <div class="text-3xl font-extrabold text-white">
-                <span class="text-emerald-400">{{ zone.up }}</span>
-                <span class="text-slate-500 text-lg font-normal">/ {{ zone.total }} UP</span>
-            </div>
-            <div class="text-right">
-                {% if zone.down > 0 %}
-                <span
-                    class="px-2.5 py-1 text-xs font-extrabold rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">{{
-                    zone.down }} DOWN</span>
-                {% else %}
-                <span
-                    class="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">ALL
-                    NORMAL</span>
-                {% endif %}
-            </div>
-        </div>
-        {% if zone.maintenance > 0 %}
-        <div class="mt-3 pt-3 border-t border-slate-800 text-xs text-amber-400 flex items-center gap-1.5">
-            <i class="fa-solid fa-wrench"></i>
-            <span>{{ zone.maintenance }} node dalam mode maintenance</span>
-        </div>
-        {% endif %}
-    </div>
-    {% endfor %}
-</div>
-
 <!-- SECTION 2: LIVE TABLE (MONITORED NODES) -->
 <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4" id="live-services-section">
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
@@ -93,8 +72,10 @@
         </div>
         <div class="flex flex-wrap items-center gap-3">
             <div class="relative flex-1 min-w-[200px] max-w-xs">
-                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                <input type="text" id="search-node" onkeyup="filterNodesTable()" placeholder="Cari nama perangkat atau IP..."
+                <i
+                    class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                <input type="text" id="search-node" onkeyup="filterNodesTable()"
+                    placeholder="Cari nama perangkat atau IP..."
                     class="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:outline-none">
             </div>
             <select id="filter-zone" onchange="filterNodesTable()"
@@ -130,8 +111,9 @@
             </thead>
             <tbody id="nodes-tbody" class="divide-y divide-slate-800/60 font-medium">
                 {% for s in services %}
-                <tr class="hover:bg-slate-800/40 transition node-row" id="device-row-{{ s.id }}" data-device-id="{{ s.id }}" data-name="{{ s.name|lower }}" data-ip="{{ s.ip_address }}" data-status="{{ s.status }}" data-zone="{{ s.area }}"
-                    data-device="{{ s.device_type }}">
+                <tr class="hover:bg-slate-800/40 transition node-row" id="device-row-{{ s.id }}"
+                    data-device-id="{{ s.id }}" data-name="{{ s.name|lower }}" data-ip="{{ s.ip_address }}"
+                    data-status="{{ s.status }}" data-zone="{{ s.area }}" data-device="{{ s.device_type }}">
                     <td class="py-3 px-4 font-bold text-white">{{ s.name }}</td>
                     <td class="py-3 px-4"><code
                             class="px-2 py-0.5 rounded bg-slate-800 text-blue-400 text-xs border border-slate-700">{{ s.ip_address }}</code>
@@ -199,8 +181,9 @@
                 <span>Log Insiden Terbaru</span>
             </h3>
             <p class="text-xs text-slate-400">Ringkasan laporan gangguan terkini
-                <span class="ml-2 font-mono text-[11px] text-slate-300 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
-                    <span id="unack-incidents-count" class="text-red-400 font-bold">0</span> Unacknowledged / 
+                <span
+                    class="ml-2 font-mono text-[11px] text-slate-300 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                    <span id="unack-incidents-count" class="text-red-400 font-bold">0</span> Unacknowledged /
                     <span id="ack-incidents-count" class="text-blue-400 font-bold">0</span> Acknowledged
                 </span>
             </p>
@@ -236,19 +219,29 @@
                     <td class="py-3.5 px-4">
                         <div class="font-bold text-white">{{ inc.service.name if inc.service else 'N/A' }}</div>
                         <div class="text-xs text-slate-400">
-                            <code>{{ inc.service.ip_address if inc.service else '-' }}</code></div>
+                            <code>{{ inc.service.ip_address if inc.service else '-' }}</code>
+                        </div>
                     </td>
                     <td class="py-3.5 px-4">
                         {% if inc.severity == 'CRITICAL' %}
-                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🚨 CRITICAL</span>
+                        <span
+                            class="px-2.5 py-1 text-xs font-bold rounded bg-red-600 text-white shadow-lg shadow-red-600/40">🚨
+                            CRITICAL</span>
                         {% elif inc.severity == 'WARNING' %}
-                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-amber-400 text-slate-900 shadow-md">⚠️ WARNING</span>
+                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-amber-400 text-slate-900 shadow-md">⚠️
+                            WARNING</span>
                         {% elif inc.severity == 'DISASTER' %}
-                        <span class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-700 text-white shadow-lg shadow-red-700/40">🔥 DISASTER</span>
+                        <span
+                            class="px-2.5 py-1 text-xs font-extrabold rounded bg-red-700 text-white shadow-lg shadow-red-700/40">🔥
+                            DISASTER</span>
                         {% elif inc.severity == 'HIGH' %}
-                        <span class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚡ HIGH</span>
+                        <span
+                            class="px-2.5 py-1 text-xs font-bold rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">⚡
+                            HIGH</span>
                         {% else %}
-                        <span class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">{{ inc.severity }}</span>
+                        <span
+                            class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">{{
+                            inc.severity }}</span>
                         {% endif %}
                     </td>
                     <td class="py-3.5 px-4 text-xs text-slate-400 font-mono">{{ inc.created_at.strftime('%Y-%m-%d
@@ -312,82 +305,16 @@
         if (res.ok) fetchDashboardSummary();
     }
 
-    function calculateZoneSummaryFromDevices(services) {
-        const zoneMap = {
-            "Zona 1 - Gate & Main Office": { zone_name: "Zona 1 - Gate & Main Office", total: 0, up: 0, down: 0, maintenance: 0 },
-            "Zona 2 - Tank Farm (Tangki Timbun)": { zone_name: "Zona 2 - Tank Farm (Tangki Timbun)", total: 0, up: 0, down: 0, maintenance: 0 },
-            "Zona 3 - Filling Shed (Loading Bay)": { zone_name: "Zona 3 - Filling Shed (Loading Bay)", total: 0, up: 0, down: 0, maintenance: 0 },
-            "Zona 4 - IT Server Room & Core Network": { zone_name: "Zona 4 - IT Server Room & Core Network", total: 0, up: 0, down: 0, maintenance: 0 }
-        };
-
-        services.forEach(s => {
-            const area = s.area;
-            if (!zoneMap[area]) {
-                zoneMap[area] = { zone_name: area, total: 0, up: 0, down: 0, maintenance: 0 };
-            }
-            zoneMap[area].total++;
-            if (s.is_maintenance) {
-                zoneMap[area].maintenance++;
-            } else if (s.status === 'UP') {
-                zoneMap[area].up++;
-            } else {
-                zoneMap[area].down++;
-            }
-        });
-
-        return Object.values(zoneMap);
-    }
-
     async function fetchDashboardSummary() {
         const refreshIcon = document.getElementById('refresh-icon');
         if (refreshIcon) refreshIcon.classList.add('fa-spin');
         try {
-            // Polling endpoint /api/devices dan /api/dashboard-summary
-            const [devRes, summaryRes] = await Promise.all([
-                fetch('/api/devices'),
-                fetch('/api/dashboard-summary')
-            ]);
-
+            const devRes = await fetch('/api/devices');
             if (!devRes.ok) return;
             const devices = await devRes.json();
-            let summaryData = null;
-            if (summaryRes.ok) {
-                summaryData = await summaryRes.json();
-            }
 
             const countEl = document.getElementById('total-nodes-count');
             if (countEl) countEl.innerText = devices.length;
-
-            // Hitung ringkasan 4 zona secara dinamis
-            const zoneSummary = summaryData && summaryData.zone_summary 
-                ? summaryData.zone_summary 
-                : calculateZoneSummaryFromDevices(devices);
-
-            const cardsContainer = document.getElementById('zone-cards-container');
-            if (cardsContainer && zoneSummary) {
-                let html = '';
-                zoneSummary.forEach(z => {
-                    let icon = 'fa-server';
-                    if (z.zone_name.includes('Zona 1')) icon = 'fa-building';
-                    else if (z.zone_name.includes('Zona 2')) icon = 'fa-oil-well';
-                    else if (z.zone_name.includes('Zona 3')) icon = 'fa-truck-droplet';
-                    const downBadge = z.down > 0
-                        ? `<span class="px-2.5 py-1 text-xs font-extrabold rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">${z.down} DOWN</span>`
-                        : `<span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">ALL NORMAL</span>`;
-                    const maintFooter = z.maintenance > 0
-                        ? `<div class="mt-3 pt-3 border-t border-slate-800 text-xs text-amber-400 flex items-center gap-1.5"><i class="fa-solid fa-wrench"></i><span>${z.maintenance} node dalam mode maintenance</span></div>` : '';
-                    html += `<div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg hover:border-slate-700 transition-all">
-                        <div class="flex items-center justify-between mb-3">
-                            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 truncate max-w-[180px]">${z.zone_name}</h3>
-                            <span class="p-2 rounded-lg bg-slate-800 text-slate-300 text-sm"><i class="fa-solid ${icon}"></i></span>
-                        </div>
-                        <div class="flex items-baseline justify-between">
-                            <div class="text-3xl font-extrabold text-white"><span class="text-emerald-400">${z.up}</span><span class="text-slate-500 text-lg font-normal">/ ${z.total} UP</span></div>
-                            <div class="text-right">${downBadge}</div>
-                        </div>${maintFooter}</div>`;
-                });
-                cardsContainer.innerHTML = html;
-            }
 
             const nodesTbody = document.getElementById('nodes-tbody');
             if (nodesTbody && devices) {
@@ -396,11 +323,11 @@
                     let dBadge = `<span class="px-2 py-0.5 text-xs font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">🎥 CCTV</span>`;
                     if (s.device_type === 'ROUTER') dBadge = `<span class="px-2 py-0.5 text-xs font-semibold rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">📶 ROUTER</span>`;
                     else if (s.device_type === 'SWITCH') dBadge = `<span class="px-2 py-0.5 text-xs font-semibold rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">🔀 SWITCH</span>`;
-                    
+
                     let statusBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">OFFLINE (DOWN)</span>`;
                     if (s.is_maintenance) statusBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">MAINTENANCE</span>`;
                     else if (s.status === 'UP') statusBadge = `<span class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">ONLINE (UP)</span>`;
-                    
+
                     const latency = (s.is_maintenance || s.status === 'DOWN')
                         ? `<span class="text-slate-500">0.0 ms</span>`
                         : `<span class="text-emerald-400 font-bold">${s.response_time_ms.toFixed(2)} ms</span>`;

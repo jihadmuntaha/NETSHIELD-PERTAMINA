@@ -16,7 +16,8 @@ class ServiceBase(BaseModel):
 
 
 class ServiceCreate(ServiceBase):
-    pass
+    eos_name: Optional[str] = None
+    eos_phone: Optional[str] = None
 
 
 class ServiceUpdate(BaseModel):
@@ -27,6 +28,8 @@ class ServiceUpdate(BaseModel):
     status: Optional[str] = None
     response_time_ms: Optional[float] = None
     is_maintenance: Optional[bool] = None
+    eos_name: Optional[str] = None
+    eos_phone: Optional[str] = None
 
 
 class ServiceResponse(ServiceBase):
@@ -38,6 +41,8 @@ class ServiceResponse(ServiceBase):
     site_type: Optional[str] = None
     level: Optional[int] = None
     parent_id: Optional[int] = None
+    eos_name: Optional[str] = None
+    eos_phone: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -53,6 +58,9 @@ class IncidentBase(BaseModel):
     status: str = "NEW"  # "NEW", "ACKNOWLEDGED", "RESOLVED"
     ack_by: Optional[str] = None
     ack_message: Optional[str] = None
+    escalation_level: int = 1
+    escalated_at: Optional[datetime] = None
+    escalation_reason: Optional[str] = None
 
 
 class IncidentCreate(BaseModel):

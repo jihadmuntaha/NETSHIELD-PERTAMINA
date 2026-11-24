@@ -378,7 +378,9 @@ async def upload_assets(request: Request, file: UploadFile = File(...), db: Sess
             device_type=device_type,
             status="UP",
             response_time_ms=0.0,
-            is_maintenance=False
+            is_maintenance=False,
+            eos_name=rec.get("eos_name"),
+            eos_phone=rec.get("eos_phone"),
         )
         db.add(service)
         imported_devices.append({
@@ -448,7 +450,9 @@ def create_device(payload: ServiceCreate, request: Request, db: Session = Depend
         device_type=payload.device_type,
         is_maintenance=payload.is_maintenance,
         status="UP",
-        response_time_ms=0.0
+        response_time_ms=0.0,
+        eos_name=payload.eos_name,
+        eos_phone=payload.eos_phone,
     )
     db.add(device)
     
@@ -684,6 +688,8 @@ def _build_device_fields(
     site_type: Optional[str],
     level: Optional[str],
     parent_id: Optional[str],
+    eos_name: Optional[str] = None,
+    eos_phone: Optional[str] = None,
     device_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Validasi & normalisasi input form Tambah/Edit. Raise ValueError berisi pesan untuk operator."""
@@ -730,6 +736,8 @@ def _build_device_fields(
         "site_type": stype,
         "level": level_val,
         "parent_id": parent,
+        "eos_name": (eos_name or "").strip()[:100] or None,
+        "eos_phone": (eos_phone or "").strip()[:30] or None,
     }
 
 
@@ -822,6 +830,8 @@ def add_device_form(
     site_type: Optional[str] = Form(None),
     level: Optional[str] = Form(None),
     parent_id: Optional[str] = Form(None),
+    eos_name: Optional[str] = Form(None),
+    eos_phone: Optional[str] = Form(None),
     snmp_enabled: Optional[str] = Form(None),
     snmp_community: Optional[str] = Form(None),
     snmp_port: Optional[str] = Form(None),
@@ -832,9 +842,9 @@ def add_device_form(
         fields = _build_device_fields(
             db, name=name, ip_address=ip_address, device_type=device_type, area=area,
             location_name=location_name, site_type=site_type, level=level, parent_id=parent_id,
+            eos_name=eos_name, eos_phone=eos_phone,
         )
-        snmp_fields = _build_snmp_fields(snmp_enabled, snmp_community, snmp_port)
-        device = Device(**fields, **snmp_fields, status="UP", response_time_ms=0.0, is_maintenance=False)
+        device = Device(**fields, status="UP", response_time_ms=0.0, is_maintenance=False)
         db.add(device)
         _audit(db, request, f"Created device: {fields['name']} ({fields['ip_address']})")
         db.commit()
@@ -1014,9 +1024,8 @@ def edit_device_form(
     site_type: Optional[str] = Form(None),
     level: Optional[str] = Form(None),
     parent_id: Optional[str] = Form(None),
-    snmp_enabled: Optional[str] = Form(None),
-    snmp_community: Optional[str] = Form(None),
-    snmp_port: Optional[str] = Form(None),
+    eos_name: Optional[str] = Form(None),
+    eos_phone: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     """POST /devices/{device_id}/edit: ubah perangkat (parent tidak boleh diri sendiri / turunannya, termasuk SNMP config)."""
@@ -1028,11 +1037,9 @@ def edit_device_form(
     try:
         fields = _build_device_fields(
             db, name=name, ip_address=ip_address, device_type=device_type, area=area,
-            location_name=location_name, site_type=site_type, level=level, parent_id=parent_id,
-            device_id=device_id,
+            location_name=location_name, site_type=site_type, level=level, parent_id=parent_id, device_id=device_id, eos_name=eos_name, eos_phone=eos_phone,
         )
-        snmp_fields = _build_snmp_fields(snmp_enabled, snmp_community, snmp_port)
-        for key, value in {**fields, **snmp_fields}.items():
+        for key, value in fields.items():
             setattr(device, key, value)
         _audit(db, request, f"Updated device ID {device_id} ({fields['name']})")
         db.commit()

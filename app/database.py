@@ -53,11 +53,27 @@ def run_migrations():
                     conn.execute(text("ALTER TABLE incident_logs ADD COLUMN latency_ms FLOAT"))
                 if "title" not in columns:
                     conn.execute(text("ALTER TABLE incident_logs ADD COLUMN title VARCHAR(255)"))
+                incident_migrations = [
+                    ("escalation_level", "INTEGER NOT NULL DEFAULT 1"),
+                    ("escalated_at", "DATETIME"),
+                    ("escalation_reason", "VARCHAR(500)"),
+                ]
+                for col_name, col_def in incident_migrations:
+                    if col_name not in columns:
+                        conn.execute(text(f"ALTER TABLE incident_logs ADD COLUMN {col_name} {col_def}"))
 
-            # ── devices — SNMP configuration columns ─────────────────────────
-            res2 = conn.execute(text("PRAGMA table_info(devices)"))
-            dev_cols = [row[1] for row in res2.fetchall()]
+            # ── devices — EOS regional contact columns ───────────────────────
+            res_devices = conn.execute(text("PRAGMA table_info(devices)"))
+            dev_cols = [row[1] for row in res_devices.fetchall()] if res_devices else []
             if dev_cols:
+                eos_migrations = [
+                    ("eos_name", "VARCHAR(100)"),
+                    ("eos_phone", "VARCHAR(30)"),
+                ]
+                for col_name, col_def in eos_migrations:
+                    if col_name not in dev_cols:
+                        conn.execute(text(f"ALTER TABLE devices ADD COLUMN {col_name} {col_def}"))
+
                 snmp_migrations = [
                     ("snmp_enabled",    "INTEGER NOT NULL DEFAULT 0"),
                     ("snmp_version",    "VARCHAR(10) NOT NULL DEFAULT '2c'"),

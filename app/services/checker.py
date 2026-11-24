@@ -93,7 +93,6 @@ async def start_polling() -> None:
 
             devices = (
                 db.query(MonitoredService)
-                .filter(MonitoredService.is_maintenance == False)  # noqa: E712
                 .all()
             )
 

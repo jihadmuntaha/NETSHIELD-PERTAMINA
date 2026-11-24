@@ -1,12 +1,13 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import httpx
+import os
 
 from app.database import SessionLocal
 from app.models.monitoring import MonitoredService, IncidentLog, AreaZona, DeviceType
 from app.core.timeutil import now_wib
-from app.services.notifier import send_incident_alert, send_recovery_alert
+from app.services.notifier import send_incident_alert, send_recovery_alert, send_takeover_alert
 
 logger = logging.getLogger("netshield_prom_poller")
 
@@ -16,7 +17,7 @@ POLL_INTERVAL_SEC = 3
 
 # Status tiket yang masih dianggap "aktif" (belum RESOLVED). IN_PROGRESS wajib ikut
 # agar tiket yang sudah di-Klaim operator tidak diduplikasi / tetap bisa auto-recover.
-ACTIVE_INCIDENT_STATUSES = ["NEW", "ACKNOWLEDGED", "IN_PROGRESS"]
+ACTIVE_INCIDENT_STATUSES = ["OPEN", "NEW", "ESCALATED", "ACKNOWLEDGED", "IN_PROGRESS"]
 
 
 def _stamp_ttr(inc: IncidentLog, resolved_dt: datetime) -> datetime:
@@ -131,7 +132,8 @@ async def evaluate_device_status_and_latency(db, service: MonitoredService, stat
                 severity="CRITICAL",
                 title="Device DOWN",
                 latency_ms=None,
-                status="NEW",
+                status="OPEN",
+                escalation_level=1,
                 created_at=now
             )
             db.add(new_inc)
@@ -171,7 +173,8 @@ async def evaluate_device_status_and_latency(db, service: MonitoredService, stat
                 severity="WARNING",
                 title=f"High Latency Detected ({rtt_ms} ms)",
                 latency_ms=rtt_ms,
-                status="NEW",
+                status="OPEN",
+                escalation_level=1,
                 created_at=now
             )
             db.add(new_inc)
@@ -222,6 +225,8 @@ async def evaluate_device_status_and_latency(db, service: MonitoredService, stat
                     "[AUTO-RECOVERY CRITICAL] Perangkat %s (%s) pulih normal (%s ms). Tiket CRITICAL #%d di-resolve -> Kirim WA Recovery.",
                     service.name, service.ip_address, rtt_ms if rtt_ms is not None else 0.0, critical_inc.id
                 )
+                if getattr(service, "is_maintenance", False):
+                    service.is_maintenance = False
                 await send_recovery_alert(device=service, incident=critical_inc, latency=rtt_ms or service.response_time_ms or 0.0)
             else:
                 logger.info(
@@ -319,6 +324,8 @@ async def monitor_prometheus_targets():
                             .all()
                         )
                         resolved_dt = now_wib()
+                        if getattr(prom_service, "is_maintenance", False):
+                            prom_service.is_maintenance = False
                         for inc in open_incidents:
                             inc.status = "RESOLVED"
                             inc.resolved_at = _stamp_ttr(inc, resolved_dt)
@@ -351,7 +358,8 @@ async def monitor_prometheus_targets():
                         new_incident = IncidentLog(
                             service_id=prom_service.id,
                             severity=severity,
-                            status="NEW",
+                            status="OPEN",
+                            escalation_level=1,
                             created_at=now_wib()
                         )
                         new_incident.is_acknowledged = False
@@ -405,4 +413,104 @@ async def monitor_prometheus_targets():
         finally:
             db.close()
 
+        await process_auto_escalations()
+
         await asyncio.sleep(POLL_INTERVAL_SEC)
+
+
+_last_auto_escalation_check = datetime.min
+
+
+async def process_auto_escalations() -> int:
+    """Escalate OPEN/NEW Tier-1 incidents after the configured EOS response timeout."""
+    global _last_auto_escalation_check
+    now = datetime.now()
+    if (now - _last_auto_escalation_check).total_seconds() < 30:
+        return 0
+    _last_auto_escalation_check = now
+
+    try:
+        timeout_minutes = int(os.getenv("ESCALATION_TIMEOUT_MINUTES", "5"))
+    except (TypeError, ValueError):
+        timeout_minutes = 5
+
+    db = SessionLocal()
+    escalated = 0
+    try:
+        cutoff = now_wib() - timedelta(minutes=max(timeout_minutes, 1))
+        incidents = (
+            db.query(IncidentLog)
+            .filter(
+                IncidentLog.status.in_(["OPEN", "NEW"]),
+                IncidentLog.escalation_level == 1,
+                IncidentLog.started_at <= cutoff,
+            )
+            .all()
+        )
+        for incident in incidents:
+            incident.status = "ESCALATED"
+            incident.escalation_level = 2
+            incident.escalated_at = now_wib()
+            incident.escalation_reason = "Auto-timeout respon EOS (belum ada ACK/ESC)"
+            db.commit()
+            db.refresh(incident)
+            if incident.device:
+                await send_takeover_alert(incident.device, incident)
+            escalated += 1
+    except Exception as exc:
+        db.rollback()
+        logger.error("[AUTO-ESCALATION] Error: %s", exc)
+    finally:
+        db.close()
+    return escalated
+
+
+async def auto_escalate_incidents():
+    """
+    Worker untuk auto-escalate insiden yang belum di-resolve setelah 30 menit.
+    Tiket dengan status NEW atau ACKNOWLEDGED dan belum ada respon dalam 30 menit
+    akan di-upgrade ke status CRITICAL dan mengirim notifikasi ulang.
+    """
+    logger.info("[AUTO-ESCALATION WORKER] Aktif.")
+
+    while True:
+        db = SessionLocal()
+        try:
+            db.expire_all()
+            now = datetime.utcnow()
+
+            # Cari insiden yang memenuhi kriteria auto-escalate
+            escalatable_incidents = (
+                db.query(IncidentLog)
+                .filter(
+                    IncidentLog.status.in_(["NEW", "ACKNOWLEDGED"]),
+                    IncidentLog.created_at <= now - timedelta(minutes=30)
+                )
+                .all()
+            )
+
+            for inc in escalatable_incidents:
+                # Upgrade insiden menjadi CRITICAL
+                inc.status = "NEW"
+                inc.severity = "CRITICAL"
+                inc.title = "URGENT: Device DOWN - Tindakan Diperlukan!"
+                inc.updated_at = now
+
+                db.add(inc)
+                db.commit()
+                db.refresh(inc)
+
+                logger.warning(
+                    "[AUTO-ESCALATION] Insiden #%d di-upgrade ke CRITICAL. Perangkat mungkin masih DOWN!",
+                    inc.id
+                )
+
+                # Kirim ulang notifikasi WA untuk insiden yang di-upgrade
+                await send_incident_alert(device=inc.service, incident=inc)
+        except Exception as exc:
+            db.rollback()
+            logger.error("[AUTO-ESCALATION ERROR] %s", exc)
+        finally:
+            db.close()
+
+        await asyncio.sleep(60)  # Cek setiap 60 detik

@@ -10,7 +10,7 @@ from sqlalchemy.orm import joinedload
 
 from app.database import SessionLocal
 from app.models.monitoring import IncidentLog, AuditLog
-from app.services.notifier import send_wa_reply, format_ack_confirmation
+from app.services.notifier import send_wa_reply, format_ack_confirmation, send_manual_handover_alert, get_regional_it_recipients
 
 logger = logging.getLogger("netshield_webhook")
 
@@ -18,7 +18,8 @@ router = APIRouter(prefix="/api/v1/webhook", tags=["Webhook"])
 
 # Flexible ACK Regex Pattern (Case-Insensitive):
 # Matches "ACK 73 Sedang penanganan di lokasi", "ack#73 OTW", "ack 73", "ACK #73: Catatan", etc.
-ACK_REGEX = re.compile(r"(?i)^\s*(?:ACK|ack)[#\s]*(\d+)(?:[\s:]+(.*))?$", re.DOTALL)
+ACK_REGEX = re.compile(r"(?i)^\s*ACK[#\s]*(\d+)(?:[\s:]+(.*))?$", re.DOTALL)
+ESC_REGEX = re.compile(r"(?i)^\s*ESC[#\s]*(\d+)(?:[\s:]+(.*))?$", re.DOTALL)
 
 
 async def _extract_payload_data(
@@ -129,7 +130,48 @@ async def whatsapp_webhook(
             print("[WEBHOOK IGNORED] Pesan kosong (empty message).")
             return {"status": "ok"}
 
-        # 2. Robust Regex Parsing untuk Perintah ACK
+        # 2. Parsing perintah ESC (manual handover EOS -> Tim IT Region)
+        esc_match = ESC_REGEX.search(message_val)
+        if esc_match:
+            incident_id = int(esc_match.group(1))
+            reason = (esc_match.group(2) or "Kendala lapangan dari EOS").strip().lstrip(":").strip()
+            db = SessionLocal()
+            try:
+                incident = db.query(IncidentLog).options(joinedload(IncidentLog.device)).filter(IncidentLog.id == incident_id).first()
+                if not incident:
+                    if sender_val:
+                        await send_wa_reply(sender_val, f"❌ Insiden #{incident_id} tidak ditemukan di sistem.")
+                    return {"status": "ok"}
+                device = incident.device
+                eos_name = (getattr(device, "eos_name", None) or name_val or "EOS Wilayah") if device else (name_val or "EOS Wilayah")
+                eos_location = (getattr(device, "location_name", None) or "Wilayah") if device else "Wilayah"
+
+                wib_tz = timezone(timedelta(hours=7))
+                now_wib = datetime.now(wib_tz).replace(tzinfo=None)
+                incident.status = "ESCALATED"
+                incident.escalation_level = 2
+                incident.escalated_at = now_wib
+                incident.escalation_reason = reason
+
+                audit = AuditLog(
+                    user_name=f"EOS {eos_location}",
+                    action=f"ESC Incident #{incident_id} via WhatsApp: {reason}",
+                    ip_address=request.client.host if request.client else "127.0.0.1",
+                    timestamp=datetime.utcnow()
+                )
+                db.add(audit)
+                db.commit()
+                db.refresh(incident)
+
+                if sender_val:
+                    await send_wa_reply(sender_val, f"✅ Insiden #{incident_id} telah diteruskan ke Tim IT Region RJBT. Kendala: {reason}")
+                if device:
+                    await send_manual_handover_alert(device, incident, eos_name, reason)
+            finally:
+                db.close()
+            return {"status": "ok"}
+
+        # 3. Robust Regex Parsing untuk Perintah ACK
         match = ACK_REGEX.search(message_val)
         if not match:
             print(f"[WEBHOOK REJECT] Pesan '{message_val}' tidak memenuhi pola/format ACK insiden.")
@@ -151,18 +193,29 @@ async def whatsapp_webhook(
 
         print(f"[WEBHOOK ACK MATCH] ID Insiden: #{incident_id}, Catatan: '{note}', Sender: '{sender_val}' ({name_val})")
 
-        # 3. Validasi Tiket Insiden & Mutasi Database
+        # 4. Validasi Tiket Insiden & Mutasi Database
         db = SessionLocal()
         try:
             incident = (
                 db.query(IncidentLog)
-                .options(joinedload(IncidentLog.service))
+                .options(joinedload(IncidentLog.device))
                 .filter(IncidentLog.id == incident_id)
                 .first()
             )
 
-            # Tentukan identitas PIC (name or sender)
-            acknowledged_by = name_val if name_val else (sender_val if sender_val else "Teknisi WA")
+            # Tentukan identitas PIC berdasarkan Tier dan nomor pengirim
+            device = incident.device if incident and incident.device else None
+            regional_numbers = {n.strip() for n in get_regional_it_recipients()}
+            sender_normalized = (sender_val or "").strip()
+            eos_phone = str(getattr(device, "eos_phone", "") or "").strip() if device else ""
+
+            if sender_normalized in regional_numbers or (incident and incident.escalation_level == 2):
+                acknowledged_by = "IT Region RJBT"
+            elif eos_phone and sender_normalized == eos_phone:
+                eos_location = getattr(device, "location_name", "Wilayah")
+                acknowledged_by = f"EOS {eos_location}"
+            else:
+                acknowledged_by = name_val or sender_normalized or "Teknisi WA"
 
             # Kasus A: Insiden tidak ditemukan
             if not incident:
@@ -216,8 +269,19 @@ async def whatsapp_webhook(
             incident.acknowledged_by = acknowledged_by
             incident.acknowledged_at = now_wib
             incident.ack_by = acknowledged_by
+            incident.assigned_to = acknowledged_by
             incident.ack_at = now_wib
             incident.ack_message = note
+
+            if incident.started_at:
+                incident.tta_seconds = max((now_wib - incident.started_at).total_seconds(), 0.0)
+
+            # Klaim melalui WA langsung masuk alur penanganan dan menahan
+            # pengiriman alert berulang untuk perangkat yang ditangani.
+            incident.status = "ACKNOWLEDGED"
+            incident.is_acknowledged = True
+            if device:
+                device.is_maintenance = True
 
             client_ip = request.client.host if request.client else "127.0.0.1"
             audit = AuditLog(
@@ -238,7 +302,7 @@ async def whatsapp_webhook(
                 acknowledged_by
             )
 
-            # 4. Pengiriman Pesan Konfirmasi Balik via Fonnte API
+            # 5. Pengiriman Pesan Konfirmasi Balik via Fonnte API
             device_name = incident.service.name if incident.service else "Perangkat Network"
             ip_address = incident.service.ip_address if incident.service else "0.0.0.0"
             zone_name = (

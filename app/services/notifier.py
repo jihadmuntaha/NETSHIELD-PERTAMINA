@@ -273,9 +273,7 @@ async def send_incident_alert(device, incident) -> bool:
         logger.warning("[FONNTE COOLDOWN] Notifikasi DOWN untuk perangkat %s diabaikan (cooldown 60s).", dev_key)
         return False
 
-    target = _resolve_target_for_device(device)
-    message = _format_incident_message(device, incident)
-    return await _send_fonnte_message(target, message, alert_type="INCIDENT ALERT (DOWN)")
+    return await dispatch_initial_alert(device, incident)
 
 
 async def send_recovery_alert(device, incident=None, latency: float = 0.0) -> bool:
@@ -297,6 +295,95 @@ async def send_recovery_alert(device, incident=None, latency: float = 0.0) -> bo
     target = _resolve_target_for_device(device)
     message = _format_recovery_message(device, incident=incident, latency=latency)
     return await _send_fonnte_message(target, message, alert_type="RECOVERY ALERT (UP)")
+
+
+def get_regional_it_recipients() -> list[str]:
+    """Parse comma/semicolon-separated regional IT WhatsApp recipients."""
+    raw = os.getenv("REGIONAL_IT_RECIPIENTS", "")
+    separators = raw.replace(";", ",")
+    return [item.strip() for item in separators.split(",") if item.strip()]
+
+
+def _format_tiered_alert(device, incident, tier: str, eos_name: str | None = None) -> str:
+    location_name = _resolve_location_name(device)
+    incident_id = getattr(incident, "id", "N/A")
+    timestamp_wib = _get_wib_timestamp(getattr(incident, "created_at", None))
+    if tier == "TAKEOVER":
+        heading = "🚨 *[TAKEOVER ALERT] TIER-2 — TIM IT REGION RJBT* 🚨"
+        instruction = f"`ACK {incident_id} <Tindakan>` untuk mengambil alih tiket"
+    elif tier == "HANDOVER":
+        heading = "🚨 *[HANDOVER EOS] TIER-2 — TIM IT REGION RJBT* 🚨"
+        instruction = f"`ACK {incident_id} <Tindakan>` untuk mengambil alih tiket"
+    else:
+        heading = "🚨 *[TIER-1] PERTAMINA NETSHIELD - ALERT EOS WILAYAH* 🚨"
+        eos_label = eos_name or "EOS Wilayah"
+        heading += f"\nEOS PIC: {eos_label}"
+        instruction = (
+            f"`ACK {incident_id} <Tindakan>` jika akan menangani\n"
+            f"`ESC {incident_id} <Kendala>` jika harus diteruskan ke Tim IT Region"
+        )
+
+    return (
+        heading + "\n"
+        f"*ID Insiden:* #{incident_id}\n"
+        f"*Lokasi:* {location_name}\n"
+        f"*Perangkat:* {getattr(device, 'name', 'Perangkat')} ({getattr(device, 'ip_address', '-')})\n"
+        f"*Status:* DOWN (Unreachable)\n"
+        f"*Waktu Kejadian:* {timestamp_wib}\n\n"
+        f"📱 *Instruksi:* {instruction}\n"
+        "Link Dashboard: http://localhost:5000/incidents"
+    )
+
+
+async def dispatch_initial_alert(device, incident) -> bool:
+    """Tier 1: route incident alert to local EOS, or regional IT if EOS phone is absent."""
+    eos_phone = str(getattr(device, "eos_phone", "") or "").strip()
+    eos_name = str(getattr(device, "eos_name", "") or "").strip() or None
+
+    if eos_phone:
+        message = _format_tiered_alert(device, incident, "TIER1", eos_name)
+        return await _send_fonnte_message(eos_phone, message, alert_type="TIER-1 EOS ALERT")
+
+    recipients = get_regional_it_recipients()
+    if recipients:
+        message = _format_tiered_alert(device, incident, "TAKEOVER", eos_name)
+        sent = False
+        for recipient in recipients:
+            sent = await _send_fonnte_message(recipient, message, alert_type="TIER-2 REGIONAL IT ALERT") or sent
+        return sent
+
+    # Kompatibilitas konfigurasi lama: bila EOS/regional belum diisi,
+    # kirim ke target WA per zona dari environment agar alert tidak hilang.
+    fallback_target = _resolve_target_for_device(device)
+    if fallback_target:
+        message = _format_incident_message(device, incident)
+        logger.warning(
+            "[ESCALATION FALLBACK] EOS phone dan REGIONAL_IT_RECIPIENTS kosong untuk incident #%s; memakai target WA zona lama %s",
+            getattr(incident, "id", "?"), fallback_target,
+        )
+        return await _send_fonnte_message(fallback_target, message, alert_type="FALLBACK ZONE ALERT")
+
+    logger.warning("[ESCALATION] EOS phone, REGIONAL_IT_RECIPIENTS, dan target WA zona semuanya kosong untuk incident #%s", getattr(incident, "id", "?"))
+    return False
+
+
+async def send_takeover_alert(device, incident) -> bool:
+    """Send Tier-2 takeover notification after EOS SLA timeout."""
+    message = _format_tiered_alert(device, incident, "TAKEOVER")
+    sent = False
+    for recipient in get_regional_it_recipients():
+        sent = await _send_fonnte_message(recipient, message, alert_type="TIER-2 AUTO-TIMEOUT TAKEOVER") or sent
+    return sent
+
+
+async def send_manual_handover_alert(device, incident, eos_name: str, reason: str) -> bool:
+    """Forward a manual EOS ESC handover to all regional IT recipients."""
+    base = _format_tiered_alert(device, incident, "HANDOVER")
+    message = base + f"\n*Diteruskan oleh:* EOS {eos_name}\n*Kendala Lapangan:* {reason}"
+    sent = False
+    for recipient in get_regional_it_recipients():
+        sent = await _send_fonnte_message(recipient, message, alert_type="TIER-2 MANUAL HANDOVER") or sent
+    return sent
 
 
 # Legacy wrappers for backward compatibility

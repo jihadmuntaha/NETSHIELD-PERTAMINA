@@ -39,6 +39,8 @@ class Device(Base):
     name = Column(String(100), nullable=False)
     ip_address = Column(String(45), unique=True, index=True, nullable=False)
     location_name = Column(String(100), nullable=False, default="Regional HQ Semarang")
+    eos_name = Column(String(100), nullable=True)
+    eos_phone = Column(String(30), nullable=True)
     site_type = Column(String(50), nullable=False, default="FUEL_TERMINAL")
     level = Column(Integer, default=0, nullable=False)  # 0: WAN, 1: Core, 2: Dist, 3: Access
     parent_id = Column(Integer, ForeignKey("devices.id"), nullable=True)
@@ -82,8 +84,11 @@ class IncidentLog(Base):
     severity = Column(String(20), nullable=False)  # "WARNING", "CRITICAL"
     title = Column(String(255), nullable=True)
     latency_ms = Column(Float, nullable=True)
-    status = Column(String(20), default="NEW", nullable=False)  # "NEW", "IN_PROGRESS", "ACKNOWLEDGED", "RESOLVED"
-    
+    status = Column(String(20), default="OPEN", nullable=False)  # "OPEN", "ESCALATED", "ACKNOWLEDGED", "IN_PROGRESS", "RESOLVED"
+    escalation_level = Column(Integer, default=1, nullable=False)
+    escalated_at = Column(DateTime, nullable=True)
+    escalation_reason = Column(String(500), nullable=True)
+
     assigned_to = Column(String(100), nullable=True)
     resolution_notes = Column(Text, nullable=True)
 
